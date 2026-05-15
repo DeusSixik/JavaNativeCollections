@@ -7,9 +7,11 @@ import sun.misc.Unsafe;
 public abstract class NativeArray implements NativeType {
 
     protected static final Unsafe unsafe = NativeUtils.getUnsafe();
+    public static final long MEMORY_ALIGNMENT = 64L;
 
     protected int capacity;
     protected int length = 0;
+    protected long rawMemoryAddress;
     protected long memoryAddress;
     protected long size_on_memory;
 
@@ -17,21 +19,23 @@ public abstract class NativeArray implements NativeType {
         this.capacity = initialCapacity;
         this.size_on_memory = size_on_memory;
         long totalBytes = (long) this.capacity * this.size_on_memory;
-        this.memoryAddress = unsafe.allocateMemory(totalBytes);
+        this.rawMemoryAddress = allocateAlignedRaw(totalBytes);
+        this.memoryAddress = alignedView(this.rawMemoryAddress);
         unsafe.setMemory(this.memoryAddress, totalBytes, (byte) 0);
     }
 
     protected NativeArray(NativeArray otherArray) {
         this.capacity = otherArray.capacity;
         this.size_on_memory = otherArray.size_on_memory;
-        this.memoryAddress = otherArray.memoryAddress;
         this.length = otherArray.length;
 
         long totalBytes = (long) this.capacity * this.size_on_memory;
         if (totalBytes > 0) {
-            this.memoryAddress = unsafe.allocateMemory(totalBytes);
+            this.rawMemoryAddress = allocateAlignedRaw(totalBytes);
+            this.memoryAddress = alignedView(this.rawMemoryAddress);
             unsafe.copyMemory(otherArray.memoryAddress, this.memoryAddress, totalBytes);
         } else {
+            this.rawMemoryAddress = 0;
             this.memoryAddress = 0;
         }
     }
@@ -57,8 +61,9 @@ public abstract class NativeArray implements NativeType {
 
     @Override
     public void freeMemory() {
-        if (memoryAddress != 0) {
-            unsafe.freeMemory(memoryAddress);
+        if (rawMemoryAddress != 0) {
+            unsafe.freeMemory(rawMemoryAddress);
+            rawMemoryAddress = 0;
             memoryAddress = 0;
             capacity = 0;
             length = 0;
@@ -67,6 +72,19 @@ public abstract class NativeArray implements NativeType {
 
     public long ptr() {
         return memoryAddress;
+    }
+
+    protected final void markWritten(int elementCount) {
+        if (length < elementCount) {
+            length = elementCount;
+        }
+    }
+
+    protected final void copyNativeMemory(long sourceAddress, long destinationAddress, long bytes) {
+        if (bytes <= 0 || sourceAddress == destinationAddress) {
+            return;
+        }
+        unsafe.copyMemory(sourceAddress, destinationAddress, bytes);
     }
 
     protected void grow() {
@@ -78,21 +96,35 @@ public abstract class NativeArray implements NativeType {
         long oldTotalBytes = (long) capacity * size_on_memory;
         long newTotalBytes = (long) newCapacity * size_on_memory;
 
-        long newAddress = unsafe.allocateMemory(newTotalBytes);
+        long newRawAddress = allocateAlignedRaw(newTotalBytes);
+        long newAddress = alignedView(newRawAddress);
         unsafe.setMemory(newAddress, newTotalBytes, (byte) 0);
 
         if (capacity > 0) {
             unsafe.copyMemory(this.memoryAddress, newAddress, oldTotalBytes);
-            unsafe.freeMemory(this.memoryAddress);
+            unsafe.freeMemory(this.rawMemoryAddress);
         }
 
+        this.rawMemoryAddress = newRawAddress;
         this.memoryAddress = newAddress;
         this.capacity = newCapacity;
     }
 
-    /**
-     * Очищает слот памяти, заполняя его нулями. Индексы остальных элементов НЕ сдвигаются.
-     */
+    private static long allocateAlignedRaw(long totalBytes) {
+        if (totalBytes <= 0) {
+            return 0;
+        }
+        return unsafe.allocateMemory(totalBytes + MEMORY_ALIGNMENT - 1);
+    }
+
+    private static long alignedView(long rawAddress) {
+        if (rawAddress == 0) {
+            return 0;
+        }
+        long mask = MEMORY_ALIGNMENT - 1;
+        return (rawAddress + mask) & ~mask;
+    }
+
     public void clearSlot(int index) {
         if (index < 0 || index >= capacity) return;
 
@@ -105,18 +137,11 @@ public abstract class NativeArray implements NativeType {
             throw new IndexOutOfBoundsException("Index: " + index + ", Size: " + length);
         }
 
-        /*
-            Количество элементов которых нам нужно сдвинуть в лево
-         */
         int numMoved = length - index - 1;
 
         if (numMoved > 0) {
             long srcOffset = memoryAddress + ((long) (index + 1) * size_on_memory);
             long dstOffset = memoryAddress + ((long) index * size_on_memory);
-
-            /*
-                Cдвигаем хвост массива на один слот влево
-             */
             unsafe.copyMemory(srcOffset, dstOffset, numMoved * size_on_memory);
         }
 

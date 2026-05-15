@@ -5,9 +5,16 @@ import net.sixik.javastructg.structs.arrays.NativeByteArray;
 import net.sixik.javastructg.structs.arrays.NativeCharArray;
 import net.sixik.javastructg.structs.arrays.NativeDoubleArray;
 import net.sixik.javastructg.structs.arrays.NativeFloatArray;
+import net.sixik.javastructg.structs.arrays.NativeFloatCursor;
+import net.sixik.javastructg.structs.arrays.NativeFloatSlice;
 import net.sixik.javastructg.structs.arrays.NativeIntArray;
+import net.sixik.javastructg.structs.arrays.NativeIntCursor;
+import net.sixik.javastructg.structs.arrays.NativeIntSlice;
 import net.sixik.javastructg.structs.arrays.NativeLongArray;
+import net.sixik.javastructg.structs.arrays.NativeArray;
 import net.sixik.javastructg.structs.arrays.NativeShortArray;
+import net.sixik.javastructg.structs.arrays.NativeShortCursor;
+import net.sixik.javastructg.structs.arrays.NativeShortSlice;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +51,7 @@ public class NativePrimitiveArrayTest {
         assertEquals(10, array.get(0));
         assertEquals(20, array.get(1));
         assertEquals(30, array.get(2));
+        assertEquals(0L, array.ptr() % NativeArray.MEMORY_ALIGNMENT);
     }
 
     @Test
@@ -75,6 +83,192 @@ public class NativePrimitiveArrayTest {
         for (int i = 0; i < expected.length; i++) {
             assertEquals(expected[i], array.get(i));
         }
+    }
+
+    @Test
+    public void testIntArrayBulkCopyRoundTrip() {
+        NativeIntArray array = track(new NativeIntArray(4));
+        int[] expected = new int[]{7, -1, 42, Integer.MIN_VALUE};
+
+        array.copyFrom(expected);
+
+        int[] actual = new int[expected.length];
+        array.copyTo(actual);
+
+        assertEquals(expected.length, array.size());
+        assertArrayEquals(expected, actual);
+    }
+
+    @Test
+    public void testIntCursorSequentialWriteAndRead() {
+        NativeIntArray array = track(new NativeIntArray(4));
+        int[] expected = new int[]{11, 22, 33, 44};
+
+        NativeIntCursor writeCursor = array.writeCursor(expected.length);
+        for (int value : expected) {
+            writeCursor.put(value);
+        }
+
+        NativeIntCursor readCursor = array.cursor();
+        int[] actual = new int[expected.length];
+        int index = 0;
+        while (readCursor.hasRemaining()) {
+            actual[index++] = readCursor.get();
+        }
+
+        assertEquals(expected.length, array.size());
+        assertArrayEquals(expected, actual);
+    }
+
+    @Test
+    public void testIntArrayRangeCopyFromHeapSlice() {
+        NativeIntArray array = track(new NativeIntArray(5));
+
+        array.copyFrom(new int[]{5, 10, 15, 20, 25}, 1, 0, 3);
+
+        int[] actual = new int[3];
+        array.copyTo(actual);
+
+        assertArrayEquals(new int[]{10, 15, 20}, actual);
+    }
+
+    @Test
+    public void testIntSliceWritesIntoSubRange() {
+        NativeIntArray array = track(new NativeIntArray(6));
+        array.fill(0);
+
+        NativeIntSlice slice = array.writeSlice(2, 3);
+        slice.set(0, 7);
+        slice.set(1, 8);
+        slice.set(2, 9);
+
+        int[] actual = new int[6];
+        array.copyTo(actual);
+
+        assertArrayEquals(new int[]{0, 0, 7, 8, 9, 0}, actual);
+    }
+
+    @Test
+    public void testIntArrayNativeToNativeCopyBetweenArrays() {
+        NativeIntArray source = track(new NativeIntArray(5));
+        NativeIntArray destination = track(new NativeIntArray(5));
+        source.copyFrom(new int[]{1, 2, 3, 4, 5});
+
+        source.copyTo(1, destination, 0, 3);
+
+        int[] actual = new int[3];
+        destination.copyTo(actual);
+
+        assertArrayEquals(new int[]{2, 3, 4}, actual);
+    }
+
+    @Test
+    public void testFloatArrayBulkCopyRoundTrip() {
+        NativeFloatArray array = track(new NativeFloatArray(4));
+        float[] expected = new float[]{1.5f, -2.25f, 0.0f, 99.75f};
+
+        array.copyFrom(expected);
+
+        float[] actual = new float[expected.length];
+        array.copyTo(actual);
+
+        assertEquals(expected.length, array.size());
+        assertArrayEquals(expected, actual);
+    }
+
+    @Test
+    public void testFloatCursorSeekFromMiddle() {
+        NativeFloatArray array = track(new NativeFloatArray(4));
+        array.copyFrom(new float[]{1.0f, 2.0f, 3.0f, 4.0f});
+
+        NativeFloatCursor cursor = array.cursorFrom(1);
+        assertEquals(3, cursor.limit());
+        assertEquals(2.0f, cursor.get());
+
+        cursor.seek(1);
+        assertEquals(3.0f, cursor.get());
+        assertEquals(4.0f, cursor.get());
+    }
+
+    @Test
+    public void testFloatArrayFillRange() {
+        NativeFloatArray array = track(new NativeFloatArray(5));
+        array.copyFrom(new float[]{1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
+
+        array.fill(1, 3, 9.5f);
+
+        float[] actual = new float[5];
+        array.copyTo(actual);
+
+        assertArrayEquals(new float[]{1.0f, 9.5f, 9.5f, 9.5f, 5.0f}, actual);
+    }
+
+    @Test
+    public void testFloatSliceCanCopyHeapRange() {
+        NativeFloatArray array = track(new NativeFloatArray(6));
+        NativeFloatSlice slice = array.writeSlice(1, 3);
+
+        slice.copyFrom(new float[]{2.5f, 5.0f, 7.5f});
+
+        float[] actual = new float[3];
+        slice.copyTo(actual);
+
+        assertArrayEquals(new float[]{2.5f, 5.0f, 7.5f}, actual);
+    }
+
+    @Test
+    public void testShortArrayBulkCopyRoundTrip() {
+        NativeShortArray array = track(new NativeShortArray(4));
+        short[] expected = new short[]{Short.MIN_VALUE, -7, 12, Short.MAX_VALUE};
+
+        array.copyFrom(expected);
+
+        short[] actual = new short[expected.length];
+        array.copyTo(actual);
+
+        assertEquals(expected.length, array.size());
+        assertArrayEquals(expected, actual);
+    }
+
+    @Test
+    public void testShortCursorCanOverwriteRange() {
+        NativeShortArray array = track(new NativeShortArray(4));
+        array.copyFrom(new short[]{1, 2, 3, 4});
+
+        NativeShortCursor cursor = array.writeCursor(1, 2);
+        cursor.put((short) 20);
+        cursor.put((short) 30);
+
+        short[] actual = new short[4];
+        array.copyTo(actual);
+
+        assertArrayEquals(new short[]{1, 20, 30, 4}, actual);
+    }
+
+    @Test
+    public void testShortArrayCopyToAnotherNativeArray() {
+        NativeShortArray source = track(new NativeShortArray(4));
+        NativeShortArray destination = track(new NativeShortArray(4));
+        source.copyFrom(new short[]{3, 6, 9, 12});
+
+        source.copyTo(1, destination, 0, 2);
+
+        short[] actual = new short[2];
+        destination.copyTo(actual);
+
+        assertArrayEquals(new short[]{6, 9}, actual);
+    }
+
+    @Test
+    public void testShortTailSliceRead() {
+        NativeShortArray array = track(new NativeShortArray(5));
+        array.copyFrom(new short[]{1, 2, 3, 4, 5});
+
+        NativeShortSlice slice = array.tailSlice(2);
+        short[] actual = new short[3];
+        slice.copyTo(actual);
+
+        assertArrayEquals(new short[]{3, 4, 5}, actual);
     }
 
     @Test

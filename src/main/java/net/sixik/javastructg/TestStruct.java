@@ -1,5 +1,6 @@
 package net.sixik.javastructg;
 
+import net.sixik.javastructg.structs.NativeStructLayout;
 import net.sixik.javastructg.structs.NativeTypeMemory;
 import net.sixik.javastructg.structs.NativeTypes;
 import sun.misc.Unsafe;
@@ -7,7 +8,22 @@ import sun.misc.Unsafe;
 public class TestStruct implements NativeTypeMemory<TestStruct> {
 
     public static final int MAX_STRING_LENGTH = NativeTypes.UUID;
-    public static final int SIZEOF = 16 + (MAX_STRING_LENGTH * NativeTypes.CHAR);
+    private static final NativeStructLayout LAYOUT;
+    private static final long X_OFFSET;
+    private static final long Y_OFFSET;
+    private static final long Z_OFFSET;
+    private static final NativeStructLayout.StringField NAME_FIELD;
+    public static final int SIZEOF;
+
+    static {
+        NativeStructLayout.Builder builder = NativeStructLayout.builder();
+        X_OFFSET = builder.intField();
+        Y_OFFSET = builder.intField();
+        Z_OFFSET = builder.intField();
+        NAME_FIELD = builder.intLengthPrefixedStringField(MAX_STRING_LENGTH);
+        LAYOUT = builder.build();
+        SIZEOF = (int) LAYOUT.sizeof();
+    }
 
     private String myName;
     private int x;
@@ -15,7 +31,6 @@ public class TestStruct implements NativeTypeMemory<TestStruct> {
     private int z;
 
     public TestStruct() {
-
     }
 
     public TestStruct(String myName, int x, int y, int z) {
@@ -35,52 +50,18 @@ public class TestStruct implements NativeTypeMemory<TestStruct> {
 
     @Override
     public void readFromMemory(Unsafe unsafe, long offset, TestStruct outElement) {
-        outElement.x = unsafe.getInt(offset);
-        outElement.y = unsafe.getInt(offset + 4);
-        outElement.z = unsafe.getInt(offset + 8);
-
-        int len = unsafe.getInt(offset + 12);
-        if (len > 0) {
-            char[] chars = new char[len];
-
-            // Быстрое копирование из нативной памяти обратно в массив на хипе
-            unsafe.copyMemory(
-                    null,
-                    offset + 16,
-                    chars,
-                    Unsafe.ARRAY_CHAR_BASE_OFFSET,
-                    len * 2L
-            );
-            outElement.myName = new String(chars);
-        } else {
-            outElement.myName = "";
-        }
+        outElement.x = unsafe.getInt(offset + X_OFFSET);
+        outElement.y = unsafe.getInt(offset + Y_OFFSET);
+        outElement.z = unsafe.getInt(offset + Z_OFFSET);
+        outElement.myName = NAME_FIELD.read(unsafe, offset);
     }
 
     @Override
     public void writeToMemory(Unsafe unsafe, long offset, TestStruct element) {
-        unsafe.putInt(offset, element.x);
-        unsafe.putInt(offset + 4, element.y);
-        unsafe.putInt(offset + 8, element.z);
-
-        if (element.myName != null) {
-            char[] chars = element.myName.toCharArray(); // В Java 9+ строки внутри байтовые, но toCharArray() универсальнее
-            int len = Math.min(chars.length, MAX_STRING_LENGTH);
-
-            // Пишем реальную длину строки
-            unsafe.putInt(offset + 12, len);
-
-            // Быстрое копирование массива из Heap (хипа) в Off-Heap (нативную память)
-            unsafe.copyMemory(
-                    chars,
-                    Unsafe.ARRAY_CHAR_BASE_OFFSET, // Смещение начала данных в массиве на хипе
-                    null,
-                    offset + 16,                   // Наш целевой адрес в нативной памяти
-                    len * 2L                       // Количество байт (len * 2, так как char = 2 байта)
-            );
-        } else {
-            unsafe.putInt(offset + 12, 0);
-        }
+        unsafe.putInt(offset + X_OFFSET, element.x);
+        unsafe.putInt(offset + Y_OFFSET, element.y);
+        unsafe.putInt(offset + Z_OFFSET, element.z);
+        NAME_FIELD.write(unsafe, offset, element.myName);
     }
 
     @Override

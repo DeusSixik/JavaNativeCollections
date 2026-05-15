@@ -1,4 +1,5 @@
 import net.sixik.javastructg.structs.NativeTypeMemory;
+import net.sixik.javastructg.structs.NativeStructLayout;
 import net.sixik.javastructg.structs.arrays.NativeObjectArray;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -339,23 +340,36 @@ public class NativeArrayBenchmarkTest {
     }
 
     private static final class BenchmarkStructMemory implements NativeTypeMemory<BenchmarkStruct> {
+        private static final NativeStructLayout LAYOUT;
+        private static final long ID_OFFSET;
+        private static final long TEMP_OFFSET;
+        private static final long HUMIDITY_OFFSET;
+
+        static {
+            NativeStructLayout.Builder builder = NativeStructLayout.builder();
+            ID_OFFSET = builder.shortField();
+            TEMP_OFFSET = builder.floatField();
+            HUMIDITY_OFFSET = builder.floatField();
+            LAYOUT = builder.build();
+        }
+
         @Override
         public long sizeof() {
-            return 10L;
+            return LAYOUT.sizeof();
         }
 
         @Override
         public void writeToMemory(Unsafe unsafe, long offset, BenchmarkStruct element) {
-            unsafe.putShort(offset, element.id);
-            unsafe.putFloat(offset + 2, element.temp);
-            unsafe.putFloat(offset + 6, element.humidity);
+            unsafe.putShort(offset + ID_OFFSET, element.id);
+            unsafe.putFloat(offset + TEMP_OFFSET, element.temp);
+            unsafe.putFloat(offset + HUMIDITY_OFFSET, element.humidity);
         }
 
         @Override
         public void readFromMemory(Unsafe unsafe, long offset, BenchmarkStruct outElement) {
-            outElement.id = unsafe.getShort(offset);
-            outElement.temp = unsafe.getFloat(offset + 2);
-            outElement.humidity = unsafe.getFloat(offset + 6);
+            outElement.id = unsafe.getShort(offset + ID_OFFSET);
+            outElement.temp = unsafe.getFloat(offset + TEMP_OFFSET);
+            outElement.humidity = unsafe.getFloat(offset + HUMIDITY_OFFSET);
         }
     }
 }
