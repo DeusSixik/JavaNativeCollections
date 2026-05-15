@@ -26,13 +26,15 @@ public class NativeObjectArray<Element> extends NativeArray {
     }
 
     public void set(int index, Element element) {
-        long offset = memoryAddress + ((long) index * size_on_memory);
-        typeMemory.writeToMemory(unsafe, offset, element);
+        typeMemory.writeToMemory(unsafe, addressAt(index), element);
     }
 
     public void get(int index, Element outBuffer) {
-        long offset = memoryAddress + ((long) index * size_on_memory);
-        typeMemory.readFromMemory(unsafe, offset, outBuffer);
+        typeMemory.readFromMemory(unsafe, addressAt(index), outBuffer);
+    }
+
+    public long addressAt(int index) {
+        return memoryAddress + ((long) index * size_on_memory);
     }
 
     @Override

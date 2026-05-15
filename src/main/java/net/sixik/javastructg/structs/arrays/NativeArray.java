@@ -1,7 +1,7 @@
 package net.sixik.javastructg.structs.arrays;
 
 import net.sixik.javastructg.structs.NativeType;
-import net.sixik.javastructg.structs.NativeUtils;
+import net.sixik.javastructg.utils.NativeUtils;
 import sun.misc.Unsafe;
 
 public abstract class NativeArray implements NativeType {

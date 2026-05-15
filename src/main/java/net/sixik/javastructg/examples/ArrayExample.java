@@ -1,7 +1,7 @@
 package net.sixik.javastructg.examples;
 
 import net.sixik.javastructg.structs.NativeRawPrimitives;
-import net.sixik.javastructg.structs.NativeUtils;
+import net.sixik.javastructg.utils.NativeUtils;
 import net.sixik.javastructg.structs.arrays.NativeIntArray;
 import sun.misc.Unsafe;
 

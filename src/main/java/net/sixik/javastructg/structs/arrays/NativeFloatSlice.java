@@ -1,5 +1,7 @@
 package net.sixik.javastructg.structs.arrays;
 
+import net.sixik.javastructg.utils.NativeUtils;
+
 public final class NativeFloatSlice {
 
     private static final int ELEMENT_SHIFT = 2;
@@ -41,7 +43,7 @@ public final class NativeFloatSlice {
     public void copyFrom(float[] source, int sourceIndex, int destinationIndex, int elementCount) {
         NativeArray.unsafe.copyMemory(
                 source,
-                net.sixik.javastructg.structs.NativeUtils.floatArrayBaseOffset() + (((long) sourceIndex) << ELEMENT_SHIFT),
+                NativeUtils.floatArrayBaseOffset() + (((long) sourceIndex) << ELEMENT_SHIFT),
                 null,
                 addressAt(destinationIndex),
                 ((long) elementCount) << ELEMENT_SHIFT
@@ -57,7 +59,7 @@ public final class NativeFloatSlice {
                 null,
                 addressAt(sourceIndex),
                 destination,
-                net.sixik.javastructg.structs.NativeUtils.floatArrayBaseOffset() + (((long) destinationIndex) << ELEMENT_SHIFT),
+                NativeUtils.floatArrayBaseOffset() + (((long) destinationIndex) << ELEMENT_SHIFT),
                 ((long) elementCount) << ELEMENT_SHIFT
         );
     }

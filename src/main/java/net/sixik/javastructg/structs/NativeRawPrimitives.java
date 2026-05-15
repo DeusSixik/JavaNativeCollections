@@ -1,5 +1,6 @@
 package net.sixik.javastructg.structs;
 
+import net.sixik.javastructg.utils.NativeUtils;
 import sun.misc.Unsafe;
 
 public final class NativeRawPrimitives {

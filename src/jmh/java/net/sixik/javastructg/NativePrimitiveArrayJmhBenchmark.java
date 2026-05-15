@@ -9,6 +9,7 @@ import net.sixik.javastructg.structs.arrays.NativeIntSlice;
 import net.sixik.javastructg.structs.arrays.NativeShortArray;
 import net.sixik.javastructg.structs.arrays.NativeShortCursor;
 import net.sixik.javastructg.structs.arrays.NativeShortSlice;
+import net.sixik.javastructg.utils.NativeUtils;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Level;
@@ -33,7 +34,7 @@ import java.util.concurrent.TimeUnit;
 @Measurement(iterations = 5, time = 500, timeUnit = TimeUnit.MILLISECONDS)
 public class NativePrimitiveArrayJmhBenchmark {
 
-    private static final Unsafe UNSAFE = net.sixik.javastructg.structs.NativeUtils.getUnsafe();
+    private static final Unsafe UNSAFE = NativeUtils.getUnsafe();
 
     @Benchmark
     public void nativeIntArrayWrite(IntState state) {

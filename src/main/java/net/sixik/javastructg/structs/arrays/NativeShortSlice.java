@@ -1,5 +1,7 @@
 package net.sixik.javastructg.structs.arrays;
 
+import net.sixik.javastructg.utils.NativeUtils;
+
 public final class NativeShortSlice {
 
     private static final int ELEMENT_SHIFT = 1;
@@ -41,7 +43,7 @@ public final class NativeShortSlice {
     public void copyFrom(short[] source, int sourceIndex, int destinationIndex, int elementCount) {
         NativeArray.unsafe.copyMemory(
                 source,
-                net.sixik.javastructg.structs.NativeUtils.shortArrayBaseOffset() + (((long) sourceIndex) << ELEMENT_SHIFT),
+                NativeUtils.shortArrayBaseOffset() + (((long) sourceIndex) << ELEMENT_SHIFT),
                 null,
                 addressAt(destinationIndex),
                 ((long) elementCount) << ELEMENT_SHIFT
@@ -57,7 +59,7 @@ public final class NativeShortSlice {
                 null,
                 addressAt(sourceIndex),
                 destination,
-                net.sixik.javastructg.structs.NativeUtils.shortArrayBaseOffset() + (((long) destinationIndex) << ELEMENT_SHIFT),
+                NativeUtils.shortArrayBaseOffset() + (((long) destinationIndex) << ELEMENT_SHIFT),
                 ((long) elementCount) << ELEMENT_SHIFT
         );
     }
