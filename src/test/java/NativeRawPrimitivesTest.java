@@ -1,4 +1,4 @@
-import net.sixik.javastructg.Example;
+import net.sixik.javastructg.examples.ArrayExample;
 import net.sixik.javastructg.structs.NativeRawPrimitives;
 import net.sixik.javastructg.structs.arrays.NativeByteArray;
 import net.sixik.javastructg.structs.arrays.NativeCharArray;
@@ -137,7 +137,7 @@ public class NativeRawPrimitivesTest {
 
     @Test
     public void testExampleUsesRecommendedPattern() {
-        assertArrayEquals(new int[]{4, 8, 12}, Example.doubleValues(new int[]{2, 4, 6}));
-        assertEquals(35L, Example.sumFilled(5, 7));
+        assertArrayEquals(new int[]{4, 8, 12}, ArrayExample.doubleValues(new int[]{2, 4, 6}));
+        assertEquals(35L, ArrayExample.sumFilled(5, 7));
     }
 }

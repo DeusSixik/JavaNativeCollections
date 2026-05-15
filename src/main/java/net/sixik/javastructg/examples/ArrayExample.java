@@ -1,15 +1,15 @@
-package net.sixik.javastructg;
+package net.sixik.javastructg.examples;
 
 import net.sixik.javastructg.structs.NativeRawPrimitives;
 import net.sixik.javastructg.structs.NativeUtils;
 import net.sixik.javastructg.structs.arrays.NativeIntArray;
 import sun.misc.Unsafe;
 
-public final class Example {
+public final class ArrayExample {
 
     private static final Unsafe UNSAFE = NativeUtils.getUnsafe();
 
-    private Example() {
+    private ArrayExample() {
     }
 
     public static int[] doubleValues(int[] input) {

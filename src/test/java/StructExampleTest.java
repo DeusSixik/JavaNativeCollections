@@ -1,4 +1,4 @@
-import net.sixik.javastructg.StructExample;
+import net.sixik.javastructg.examples.StructExample;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
