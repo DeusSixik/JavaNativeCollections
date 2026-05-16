@@ -146,7 +146,58 @@ Examples:
 - `src/main/java/net/sixik/javastructg/examples/ObjectSetExample.java`
 - `src/main/java/net/sixik/javastructg/examples/HashSetExample.java`
 
-### 4. Raw primitive memory helpers
+### 4. Native maps and deques
+
+Map implementations:
+
+- `NativeLong2ByteMap`
+- `NativeLong2BooleanMap`
+- `NativeLong2LongMap`
+- `NativeLong2ObjectMap<V>`
+- `NativeInt2IntMap`
+- `NativeInt2LongMap`
+- `NativeInt2ObjectMap<V>`
+- `NativeObject2IntMap<K>`
+- `NativeObject2ByteMap<K>`
+- `NativeObject2LongMap<K>`
+- `NativeObject2ObjectMap<K, V>`
+- `Object2NativeMap<K, V>`
+- `NativeIdentity2IntMap<K>`
+- `NativeIdentity2ByteMap<K>`
+- `NativeIdentity2BooleanMap<K>`
+
+Deque implementations:
+
+- `NativeLongDeque`
+- `NativeIntDeque`
+- `NativeArrayDeque<T>`
+
+The map API intentionally avoids returning heap objects from native storage. Object-valued maps write into a caller-provided `outBuffer`:
+
+- primitive maps use `get(key, defaultValue)`;
+- object-valued maps use `get(key, outBuffer)` and return `boolean`;
+- `put` returns `true` for a new key and `false` when an existing value was replaced;
+- object-key maps also expose prehashed operations for repeated lookups.
+- identity maps use reference identity (`==`) and primitive values; they keep keys in a compact `Object[]` so the GC can still see references safely.
+- `Object2NativeMap<K, V>` keeps normal Java object keys with `equals/hashCode`, while values are stored in native memory through `NativeTypeMemory<V>`.
+
+The deque API follows the same rule:
+
+- `NativeLongDeque` returns primitive `long` values directly;
+- `NativeArrayDeque<T>` reads into an `outBuffer` and can discard entries without reading them.
+
+Focused benchmark command:
+
+```powershell
+.\gradlew jmhNativeCollections
+```
+
+Reports are written to:
+
+- `build/reports/jmh/native-collections-results.json`
+- `build/reports/jmh/native-collections-human.txt`
+
+### 5. Raw primitive memory helpers
 
 Core file:
 
@@ -233,6 +284,49 @@ try {
     boolean removed = set.removeHash(hash);
 } finally {
     set.freeMemory();
+}
+```
+
+### Native primitive map
+
+```java
+NativeLong2LongMap map = new NativeLong2LongMap(1024);
+
+try {
+    map.put(chunkKey, height);
+    long savedHeight = map.get(chunkKey, -1L);
+    boolean existed = map.remove(chunkKey);
+} finally {
+    map.freeMemory();
+}
+```
+
+### Native object-valued map
+
+```java
+NativeLong2ObjectMap<ChunkStats> map = new NativeLong2ObjectMap<>(1024, chunkStatsMemory);
+ChunkStats out = new ChunkStats();
+
+try {
+    map.put(chunkKey, stats);
+    if (map.get(chunkKey, out)) {
+        // use out without allocating a new ChunkStats during lookup
+    }
+} finally {
+    map.freeMemory();
+}
+```
+
+### Native long deque
+
+```java
+NativeLongDeque deque = new NativeLongDeque(1024);
+
+try {
+    deque.addLast(chunkKey);
+    long next = deque.pollFirst(-1L);
+} finally {
+    deque.freeMemory();
 }
 ```
 

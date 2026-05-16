@@ -8,7 +8,7 @@ def jitpackGroup = gradle.startParameter.projectProperties['group'] ?: System.ge
 def jitpackVersion = gradle.startParameter.projectProperties['version'] ?: System.getenv('VERSION')
 
 group = jitpackGroup ?: 'net.sixik.javastructg'
-version = jitpackVersion ?: '1.0.1'
+version = jitpackVersion ?: '1.1.0'
 
 java {
     toolchain {
@@ -118,6 +118,26 @@ tasks.register('jmhObjectSetFocused', Exec) {
 
         commandLine 'java', '-jar', jarFile.absolutePath,
                 'net.sixik.javastructg.ObjectSetFocusedJmhBenchmark.*',
+                '-rf', 'json',
+                '-rff', jsonFile.absolutePath,
+                '-o', humanFile.absolutePath
+    }
+}
+
+tasks.register('jmhNativeCollections', Exec) {
+    description = 'Runs JMH benchmarks for native maps and deques.'
+    group = 'benchmark'
+    dependsOn tasks.named('jmhJar')
+
+    doFirst {
+        def jarFile = layout.buildDirectory.file("libs/${project.name}-${project.version}-jmh.jar").get().asFile
+        def jsonFile = layout.buildDirectory.file('reports/jmh/native-collections-results.json').get().asFile
+        def humanFile = layout.buildDirectory.file('reports/jmh/native-collections-human.txt').get().asFile
+
+        jsonFile.parentFile.mkdirs()
+
+        commandLine 'java', '-jar', jarFile.absolutePath,
+                'net.sixik.javastructg.(NativeMapJmhBenchmark|NativeSpecializedMapJmhBenchmark|NativeDequeJmhBenchmark).*',
                 '-rf', 'json',
                 '-rff', jsonFile.absolutePath,
                 '-o', humanFile.absolutePath
