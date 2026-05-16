@@ -55,6 +55,19 @@ public class ObjectSetFocusedJmhBenchmark {
     }
 
     @Benchmark
+    public void nativeObjectSetAddUniquePrehashed(AddState state, Blackhole blackhole) {
+        NativeObjectSet<FocusedPerson> set = new NativeObjectSet<>(state.expectedCapacity, state.memory, FocusedPerson::new);
+        try {
+            for (int i = 0; i < state.values.length; i++) {
+                blackhole.consume(set.addPrehashed(state.values[i], state.valueHashes[i]));
+            }
+            blackhole.consume(set.size());
+        } finally {
+            set.freeMemory();
+        }
+    }
+
+    @Benchmark
     public void hashSetContainsHitSameInstance(QueryState state, Blackhole blackhole) {
         for (FocusedPerson value : state.hitSameInstanceQueries) {
             blackhole.consume(state.hashSet.contains(value));
@@ -65,6 +78,13 @@ public class ObjectSetFocusedJmhBenchmark {
     public void nativeObjectSetContainsHitSameInstance(QueryState state, Blackhole blackhole) {
         for (FocusedPerson value : state.hitSameInstanceQueries) {
             blackhole.consume(state.nativeObjectSet.contains(value));
+        }
+    }
+
+    @Benchmark
+    public void nativeObjectSetContainsHitSameInstancePrehashed(QueryState state, Blackhole blackhole) {
+        for (int i = 0; i < state.hitSameInstanceQueries.length; i++) {
+            blackhole.consume(state.nativeObjectSet.containsPrehashed(state.hitSameInstanceQueries[i], state.hitSameInstanceHashes[i]));
         }
     }
 
@@ -83,6 +103,13 @@ public class ObjectSetFocusedJmhBenchmark {
     }
 
     @Benchmark
+    public void nativeObjectSetContainsHitEqualCopyPrehashed(QueryState state, Blackhole blackhole) {
+        for (int i = 0; i < state.hitEqualCopyQueries.length; i++) {
+            blackhole.consume(state.nativeObjectSet.containsPrehashed(state.hitEqualCopyQueries[i], state.hitEqualCopyHashes[i]));
+        }
+    }
+
+    @Benchmark
     public void hashSetContainsMissNearMiss(QueryState state, Blackhole blackhole) {
         for (FocusedPerson value : state.missQueries) {
             blackhole.consume(state.hashSet.contains(value));
@@ -93,6 +120,13 @@ public class ObjectSetFocusedJmhBenchmark {
     public void nativeObjectSetContainsMissNearMiss(QueryState state, Blackhole blackhole) {
         for (FocusedPerson value : state.missQueries) {
             blackhole.consume(state.nativeObjectSet.contains(value));
+        }
+    }
+
+    @Benchmark
+    public void nativeObjectSetContainsMissNearMissPrehashed(QueryState state, Blackhole blackhole) {
+        for (int i = 0; i < state.missQueries.length; i++) {
+            blackhole.consume(state.nativeObjectSet.containsPrehashed(state.missQueries[i], state.missHashes[i]));
         }
     }
 
@@ -113,6 +147,14 @@ public class ObjectSetFocusedJmhBenchmark {
     }
 
     @Benchmark
+    public void nativeObjectSetAddDuplicatePrehashed(DuplicateAddState state, Blackhole blackhole) {
+        for (int i = 0; i < state.duplicateQueries.length; i++) {
+            blackhole.consume(state.nativeObjectSet.addPrehashed(state.duplicateQueries[i], state.duplicateHashes[i]));
+        }
+        blackhole.consume(state.nativeObjectSet.size());
+    }
+
+    @Benchmark
     public void hashSetRemoveEqualCopy(RemoveState state, Blackhole blackhole) {
         for (FocusedPerson value : state.removeQueries) {
             blackhole.consume(state.hashSet.remove(value));
@@ -124,6 +166,14 @@ public class ObjectSetFocusedJmhBenchmark {
     public void nativeObjectSetRemoveEqualCopy(RemoveState state, Blackhole blackhole) {
         for (FocusedPerson value : state.removeQueries) {
             blackhole.consume(state.nativeObjectSet.remove(value));
+        }
+        blackhole.consume(state.nativeObjectSet.size());
+    }
+
+    @Benchmark
+    public void nativeObjectSetRemoveEqualCopyPrehashed(RemoveState state, Blackhole blackhole) {
+        for (int i = 0; i < state.removeQueries.length; i++) {
+            blackhole.consume(state.nativeObjectSet.removePrehashed(state.removeQueries[i], state.removeHashes[i]));
         }
         blackhole.consume(state.nativeObjectSet.size());
     }
@@ -148,6 +198,16 @@ public class ObjectSetFocusedJmhBenchmark {
         blackhole.consume(set.size());
     }
 
+    @Benchmark
+    public void nativeObjectSetClearAndRefillPrehashed(ClearRefillState state, Blackhole blackhole) {
+        NativeObjectSet<FocusedPerson> set = state.nativeObjectSet;
+        set.clear();
+        for (int i = 0; i < state.values.length; i++) {
+            blackhole.consume(set.addPrehashed(state.values[i], state.valueHashes[i]));
+        }
+        blackhole.consume(set.size());
+    }
+
     @State(Scope.Thread)
     public abstract static class ObjectStateBase {
         @Param({"1024", "65536"})
@@ -157,12 +217,14 @@ public class ObjectSetFocusedJmhBenchmark {
         public int nameLength;
 
         protected FocusedPerson[] values;
+        protected long[] valueHashes;
         protected int expectedCapacity;
         protected final FocusedPersonMemory memory = new FocusedPersonMemory();
 
         @Setup(Level.Trial)
         public void setupTrial() {
             values = createValues(size, nameLength, 44_117);
+            valueHashes = computeHashes(values, memory);
             expectedCapacity = size << 1;
         }
     }
@@ -176,6 +238,9 @@ public class ObjectSetFocusedJmhBenchmark {
         private FocusedPerson[] hitSameInstanceQueries;
         private FocusedPerson[] hitEqualCopyQueries;
         private FocusedPerson[] missQueries;
+        private long[] hitSameInstanceHashes;
+        private long[] hitEqualCopyHashes;
+        private long[] missHashes;
         private NativeObjectSet<FocusedPerson> nativeObjectSet;
         private HashSet<FocusedPerson> hashSet;
 
@@ -186,6 +251,9 @@ public class ObjectSetFocusedJmhBenchmark {
             hitSameInstanceQueries = shuffledCopy(values, 11_101L);
             hitEqualCopyQueries = copyValues(hitSameInstanceQueries);
             missQueries = createMisses(values);
+            hitSameInstanceHashes = computeHashes(hitSameInstanceQueries, memory);
+            hitEqualCopyHashes = computeHashes(hitEqualCopyQueries, memory);
+            missHashes = computeHashes(missQueries, memory);
         }
 
         @Setup(Level.Iteration)
@@ -211,6 +279,7 @@ public class ObjectSetFocusedJmhBenchmark {
     @State(Scope.Thread)
     public static class DuplicateAddState extends ObjectStateBase {
         private FocusedPerson[] duplicateQueries;
+        private long[] duplicateHashes;
         private NativeObjectSet<FocusedPerson> nativeObjectSet;
         private HashSet<FocusedPerson> hashSet;
 
@@ -219,6 +288,7 @@ public class ObjectSetFocusedJmhBenchmark {
         public void setupTrial() {
             super.setupTrial();
             duplicateQueries = copyValues(shuffledCopy(values, 22_202L));
+            duplicateHashes = computeHashes(duplicateQueries, memory);
         }
 
         @Setup(Level.Invocation)
@@ -244,6 +314,7 @@ public class ObjectSetFocusedJmhBenchmark {
     @State(Scope.Thread)
     public static class RemoveState extends ObjectStateBase {
         private FocusedPerson[] removeQueries;
+        private long[] removeHashes;
         private NativeObjectSet<FocusedPerson> nativeObjectSet;
         private HashSet<FocusedPerson> hashSet;
 
@@ -252,6 +323,7 @@ public class ObjectSetFocusedJmhBenchmark {
         public void setupTrial() {
             super.setupTrial();
             removeQueries = copyValues(shuffledCopy(values, 33_303L));
+            removeHashes = computeHashes(removeQueries, memory);
         }
 
         @Setup(Level.Invocation)
@@ -324,6 +396,14 @@ public class ObjectSetFocusedJmhBenchmark {
             }
         }
         return misses;
+    }
+
+    private static long[] computeHashes(FocusedPerson[] values, FocusedPersonMemory memory) {
+        long[] hashes = new long[values.length];
+        for (int i = 0; i < values.length; i++) {
+            hashes[i] = memory.hash(values[i]);
+        }
+        return hashes;
     }
 
     private static FocusedPerson[] shuffledCopy(FocusedPerson[] source, long seed) {

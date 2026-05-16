@@ -195,6 +195,56 @@ public class NativeAdditionalSetsTest {
     }
 
     @Test
+    public void testObjectSetSupportsPrehashedOperationsWithoutCallingHash() {
+        PointMemory hashMemory = new PointMemory();
+        ThrowingHashPointMemory setMemory = new ThrowingHashPointMemory();
+        NativeObjectSet<Point> set = new NativeObjectSet<>(8, setMemory, Point::new);
+        try {
+            Point left = new Point("left", 1, 11);
+            Point right = new Point("right", 2, 22);
+            Point missing = new Point("missing", 3, 33);
+
+            long leftHash = hashMemory.hash(left);
+            long rightHash = hashMemory.hash(right);
+            long missingHash = hashMemory.hash(missing);
+
+            assertTrue(set.addPrehashed(left, leftHash));
+            assertTrue(set.addPrehashed(right, rightHash));
+            assertFalse(set.addPrehashed(new Point("left", 1, 11), leftHash));
+
+            assertTrue(set.containsPrehashed(new Point("left", 1, 11), leftHash));
+            assertFalse(set.containsPrehashed(missing, missingHash));
+
+            assertTrue(set.removePrehashed(new Point("left", 1, 11), leftHash));
+            assertFalse(set.containsPrehashed(new Point("left", 1, 11), leftHash));
+            assertFalse(set.removePrehashed(new Point("left", 1, 11), leftHash));
+            assertEquals(1, set.size());
+        } finally {
+            set.freeMemory();
+        }
+    }
+
+    @Test
+    public void testObjectSetSupportsUtf16StringValues() {
+        PointMemory memory = new PointMemory();
+        NativeObjectSet<Point> set = new NativeObjectSet<>(8, memory, Point::new);
+        try {
+            Point left = new Point("\u0100-left", 1, 11);
+            Point right = new Point("\u0416-right", 2, 22);
+
+            assertTrue(set.add(left));
+            assertTrue(set.add(right));
+            assertTrue(set.contains(new Point("\u0100-left", 1, 11)));
+            assertTrue(set.contains(new Point("\u0416-right", 2, 22)));
+            assertTrue(set.remove(new Point("\u0100-left", 1, 11)));
+            assertFalse(set.contains(new Point("\u0100-left", 1, 11)));
+            assertEquals(1, set.size());
+        } finally {
+            set.freeMemory();
+        }
+    }
+
+    @Test
     public void testObjectSetUnsafeHashEqualityWorksForCollisionFreeHashes() {
         PointMemory memory = new PointMemory();
         NativeHashSet<Point> set = new NativeHashSet<>(8, memory);
@@ -369,6 +419,13 @@ public class NativeAdditionalSetsTest {
         public void readFromMemory(Unsafe unsafe, long offset, Point outElement) {
             readCount++;
             super.readFromMemory(unsafe, offset, outElement);
+        }
+    }
+
+    private static final class ThrowingHashPointMemory extends PointMemory {
+        @Override
+        public long hash(Point element) {
+            throw new AssertionError("Prehashed NativeObjectSet path must not call hash()");
         }
     }
 

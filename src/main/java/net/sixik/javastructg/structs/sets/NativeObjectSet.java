@@ -32,9 +32,12 @@ public final class NativeObjectSet<T> extends NativeSet {
     }
 
     public boolean add(T value) {
+        return addPrehashed(value, typeMemory.hash(value));
+    }
+
+    public boolean addPrehashed(T value, long hash) {
         ensureCapacityForInsert();
 
-        long hash = typeMemory.hash(value);
         int mixedHash = spreadHash(hash);
         int index = indexForHash(mixedHash);
         int firstDeleted = -1;
@@ -67,7 +70,11 @@ public final class NativeObjectSet<T> extends NativeSet {
     }
 
     public boolean contains(T value) {
-        int mixedHash = spreadHash(typeMemory.hash(value));
+        return containsPrehashed(value, typeMemory.hash(value));
+    }
+
+    public boolean containsPrehashed(T value, long hash) {
+        int mixedHash = spreadHash(hash);
         int index = indexForHash(mixedHash);
 
         while (true) {
@@ -85,7 +92,11 @@ public final class NativeObjectSet<T> extends NativeSet {
     }
 
     public boolean remove(T value) {
-        int mixedHash = spreadHash(typeMemory.hash(value));
+        return removePrehashed(value, typeMemory.hash(value));
+    }
+
+    public boolean removePrehashed(T value, long hash) {
+        int mixedHash = spreadHash(hash);
         int index = indexForHash(mixedHash);
 
         while (true) {

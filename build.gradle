@@ -68,3 +68,23 @@ tasks.register('jmhSets', Exec) {
                 '-o', humanFile.absolutePath
     }
 }
+
+tasks.register('jmhObjectSetFocused', Exec) {
+    description = 'Runs only focused ObjectSet JMH benchmarks, including prehashed NativeObjectSet scenarios.'
+    group = 'benchmark'
+    dependsOn tasks.named('jmhJar')
+
+    doFirst {
+        def jarFile = layout.buildDirectory.file("libs/${project.name}-${project.version}-jmh.jar").get().asFile
+        def jsonFile = layout.buildDirectory.file('reports/jmh/object-set-focused-results.json').get().asFile
+        def humanFile = layout.buildDirectory.file('reports/jmh/object-set-focused-human.txt').get().asFile
+
+        jsonFile.parentFile.mkdirs()
+
+        commandLine 'java', '-jar', jarFile.absolutePath,
+                'net.sixik.javastructg.ObjectSetFocusedJmhBenchmark.*',
+                '-rf', 'json',
+                '-rff', jsonFile.absolutePath,
+                '-o', humanFile.absolutePath
+    }
+}

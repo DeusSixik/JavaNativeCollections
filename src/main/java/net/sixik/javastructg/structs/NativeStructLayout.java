@@ -1,6 +1,10 @@
 package net.sixik.javastructg.structs;
 
+import net.sixik.javastructg.utils.NativeUtils;
 import sun.misc.Unsafe;
+
+import java.lang.reflect.Field;
+import java.nio.ByteOrder;
 
 public final class NativeStructLayout {
 
@@ -110,6 +114,31 @@ public final class NativeStructLayout {
 
     public static final class StringField {
 
+        private static final Unsafe STRING_UNSAFE = NativeUtils.getUnsafe();
+        private static final long STRING_VALUE_OFFSET;
+        private static final long STRING_CODER_OFFSET;
+        private static final boolean STRING_VALUE_IS_BYTES;
+        private static final long BYTE_ARRAY_BASE_OFFSET = STRING_UNSAFE.arrayBaseOffset(byte[].class);
+        private static final long CHAR_ARRAY_BASE_OFFSET = STRING_UNSAFE.arrayBaseOffset(char[].class);
+        private static final boolean DIRECT_UTF16_LAYOUT = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN;
+
+        static {
+            try {
+                Field valueField = String.class.getDeclaredField("value");
+                STRING_VALUE_OFFSET = STRING_UNSAFE.objectFieldOffset(valueField);
+                STRING_VALUE_IS_BYTES = valueField.getType() == byte[].class;
+
+                if (STRING_VALUE_IS_BYTES) {
+                    Field coderField = String.class.getDeclaredField("coder");
+                    STRING_CODER_OFFSET = STRING_UNSAFE.objectFieldOffset(coderField);
+                } else {
+                    STRING_CODER_OFFSET = -1L;
+                }
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("Unable to access String internals", e);
+            }
+        }
+
         private final long lengthOffset;
         private final long dataOffset;
         private final int maxChars;
@@ -141,9 +170,47 @@ public final class NativeStructLayout {
         public void write(Unsafe unsafe, long structAddress, String value) {
             int length = value == null ? 0 : Math.min(value.length(), maxChars);
             putLength(unsafe, structAddress + lengthOffset, length);
+            if (length == 0) {
+                return;
+            }
+
             long dataAddress = structAddress + dataOffset;
+            if (STRING_VALUE_IS_BYTES) {
+                byte[] bytes = (byte[]) STRING_UNSAFE.getObject(value, STRING_VALUE_OFFSET);
+                if (isLatin1(value)) {
+                    writeLatin1(unsafe, dataAddress, bytes, length);
+                    return;
+                }
+                if (DIRECT_UTF16_LAYOUT) {
+                    unsafe.copyMemory(bytes, BYTE_ARRAY_BASE_OFFSET, null, dataAddress, length * 2L);
+                    return;
+                }
+                writeUtf16Bytes(unsafe, dataAddress, bytes, length);
+                return;
+            }
+
+            char[] chars = (char[]) STRING_UNSAFE.getObject(value, STRING_VALUE_OFFSET);
+            unsafe.copyMemory(chars, CHAR_ARRAY_BASE_OFFSET, null, dataAddress, length * 2L);
+        }
+
+        private static void writeLatin1(Unsafe unsafe, long dataAddress, byte[] bytes, int length) {
+            int i = 0;
+            while (i + 4 <= length) {
+                unsafe.putLong(dataAddress + (((long) i) << 1), packLatin1Quad(bytes, i));
+                i += 4;
+            }
+            if (i + 2 <= length) {
+                unsafe.putInt(dataAddress + (((long) i) << 1), packLatin1Pair(bytes, i));
+                i += 2;
+            }
+            if (i < length) {
+                unsafe.putChar(dataAddress + (((long) i) << 1), (char) Byte.toUnsignedInt(bytes[i]));
+            }
+        }
+
+        private static void writeUtf16Bytes(Unsafe unsafe, long dataAddress, byte[] bytes, int length) {
             for (int i = 0; i < length; i++) {
-                unsafe.putChar(dataAddress + (i * 2L), value.charAt(i));
+                unsafe.putChar(dataAddress + (((long) i) << 1), utf16CharAt(bytes, i));
             }
         }
 
@@ -168,8 +235,24 @@ public final class NativeStructLayout {
             }
 
             long dataAddress = structAddress + dataOffset;
+            if (length == 0) {
+                return true;
+            }
+
+            if (STRING_VALUE_IS_BYTES) {
+                byte[] bytes = (byte[]) STRING_UNSAFE.getObject(value, STRING_VALUE_OFFSET);
+                if (isLatin1(value)) {
+                    return equalsLatin1(unsafe, dataAddress, bytes, length);
+                }
+                if (DIRECT_UTF16_LAYOUT) {
+                    return equalsUtf16Direct(unsafe, dataAddress, bytes, length);
+                }
+                return equalsUtf16Bytes(unsafe, dataAddress, bytes, length);
+            }
+
+            char[] chars = (char[]) STRING_UNSAFE.getObject(value, STRING_VALUE_OFFSET);
             for (int i = 0; i < length; i++) {
-                if (unsafe.getChar(dataAddress + (i * 2L)) != value.charAt(i)) {
+                if (unsafe.getChar(dataAddress + (((long) i) << 1)) != chars[i]) {
                     return false;
                 }
             }
@@ -182,11 +265,96 @@ public final class NativeStructLayout {
             long dataAddress = structAddress + dataOffset;
             int hash = 0;
 
-            for (int i = 0; i < length; i++) {
-                hash = 31 * hash + unsafe.getChar(dataAddress + (i * 2L));
+            int i = 0;
+            while (i + 4 <= length) {
+                long packed = unsafe.getLong(dataAddress + (((long) i) << 1));
+                hash = 31 * hash + (char) (packed & 0xFFFFL);
+                hash = 31 * hash + (char) ((packed >>> 16) & 0xFFFFL);
+                hash = 31 * hash + (char) ((packed >>> 32) & 0xFFFFL);
+                hash = 31 * hash + (char) ((packed >>> 48) & 0xFFFFL);
+                i += 4;
+            }
+            while (i < length) {
+                hash = 31 * hash + unsafe.getChar(dataAddress + (((long) i) << 1));
+                i++;
             }
 
             return hash;
+        }
+
+        private static boolean equalsLatin1(Unsafe unsafe, long dataAddress, byte[] bytes, int length) {
+            int i = 0;
+            while (i + 4 <= length) {
+                if (unsafe.getLong(dataAddress + (((long) i) << 1)) != packLatin1Quad(bytes, i)) {
+                    return false;
+                }
+                i += 4;
+            }
+            if (i + 2 <= length) {
+                if (unsafe.getInt(dataAddress + (((long) i) << 1)) != packLatin1Pair(bytes, i)) {
+                    return false;
+                }
+                i += 2;
+            }
+            if (i < length) {
+                return unsafe.getChar(dataAddress + (((long) i) << 1)) == (char) Byte.toUnsignedInt(bytes[i]);
+            }
+            return true;
+        }
+
+        private static boolean equalsUtf16Direct(Unsafe unsafe, long dataAddress, byte[] bytes, int length) {
+            long byteOffset = BYTE_ARRAY_BASE_OFFSET;
+            long endOffset = byteOffset + (length * 2L);
+
+            while (byteOffset + Long.BYTES <= endOffset) {
+                if (unsafe.getLong(dataAddress) != STRING_UNSAFE.getLong(bytes, byteOffset)) {
+                    return false;
+                }
+                dataAddress += Long.BYTES;
+                byteOffset += Long.BYTES;
+            }
+            if (byteOffset + Integer.BYTES <= endOffset) {
+                if (unsafe.getInt(dataAddress) != STRING_UNSAFE.getInt(bytes, byteOffset)) {
+                    return false;
+                }
+                dataAddress += Integer.BYTES;
+                byteOffset += Integer.BYTES;
+            }
+            if (byteOffset < endOffset) {
+                return unsafe.getShort(dataAddress) == STRING_UNSAFE.getShort(bytes, byteOffset);
+            }
+            return true;
+        }
+
+        private static boolean equalsUtf16Bytes(Unsafe unsafe, long dataAddress, byte[] bytes, int length) {
+            for (int i = 0; i < length; i++) {
+                if (unsafe.getChar(dataAddress + (((long) i) << 1)) != utf16CharAt(bytes, i)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static boolean isLatin1(String value) {
+            return STRING_UNSAFE.getByte(value, STRING_CODER_OFFSET) == 0;
+        }
+
+        private static long packLatin1Quad(byte[] bytes, int index) {
+            return Byte.toUnsignedLong(bytes[index])
+                    | (Byte.toUnsignedLong(bytes[index + 1]) << 16)
+                    | (Byte.toUnsignedLong(bytes[index + 2]) << 32)
+                    | (Byte.toUnsignedLong(bytes[index + 3]) << 48);
+        }
+
+        private static int packLatin1Pair(byte[] bytes, int index) {
+            return Byte.toUnsignedInt(bytes[index])
+                    | (Byte.toUnsignedInt(bytes[index + 1]) << 16);
+        }
+
+        private static char utf16CharAt(byte[] bytes, int index) {
+            int byteIndex = index << 1;
+            return (char) (Byte.toUnsignedInt(bytes[byteIndex])
+                    | (Byte.toUnsignedInt(bytes[byteIndex + 1]) << 8));
         }
 
         private void putLength(Unsafe unsafe, long address, int value) {
