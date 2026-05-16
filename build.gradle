@@ -8,7 +8,7 @@ def jitpackGroup = gradle.startParameter.projectProperties['group'] ?: System.ge
 def jitpackVersion = gradle.startParameter.projectProperties['version'] ?: System.getenv('VERSION')
 
 group = jitpackGroup ?: 'net.sixik.javastructg'
-version = jitpackVersion ?: '1.0.0'
+version = jitpackVersion ?: '1.0.1'
 
 java {
     toolchain {
