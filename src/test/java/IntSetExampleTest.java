@@ -1,4 +1,4 @@
-import net.sixik.javastructg.IntSetExample;
+import net.sixik.javastructg.examples.IntSetExample;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;

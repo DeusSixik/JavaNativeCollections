@@ -1,4 +1,4 @@
-package net.sixik.javastructg;
+package net.sixik.javastructg.examples;
 
 import net.sixik.javastructg.structs.sets.NativeIntSet;
 

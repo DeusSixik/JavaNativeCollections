@@ -73,6 +73,11 @@ public final class NativeStructLayout {
             return field(sizeBytes, alignmentBytes);
         }
 
+        public StructField structField(NativeStructLayout layout) {
+            long fieldOffset = field(layout.sizeof(), layout.alignment());
+            return new StructField(fieldOffset, layout);
+        }
+
         public StringField intLengthPrefixedStringField(int maxChars) {
             return stringField(maxChars, NativeTypes.INT);
         }
@@ -92,7 +97,7 @@ public final class NativeStructLayout {
             return new NativeStructLayout(finalSize, maxAlignment);
         }
 
-        private long field(int sizeBytes, int alignmentBytes) {
+        private long field(long sizeBytes, int alignmentBytes) {
             offset = alignUp(offset, alignmentBytes);
             long fieldOffset = offset;
             offset += sizeBytes;
@@ -109,6 +114,37 @@ public final class NativeStructLayout {
         private static long alignUp(long value, int alignmentBytes) {
             long mask = alignmentBytes - 1L;
             return (value + mask) & ~mask;
+        }
+    }
+
+    public static final class StructField {
+
+        private final long offset;
+        private final NativeStructLayout layout;
+
+        private StructField(long offset, NativeStructLayout layout) {
+            this.offset = offset;
+            this.layout = layout;
+        }
+
+        public long offset() {
+            return offset;
+        }
+
+        public NativeStructLayout layout() {
+            return layout;
+        }
+
+        public long sizeof() {
+            return layout.sizeof();
+        }
+
+        public int alignment() {
+            return layout.alignment();
+        }
+
+        public long address(long structAddress) {
+            return structAddress + offset;
         }
     }
 

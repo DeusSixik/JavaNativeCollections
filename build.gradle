@@ -123,6 +123,26 @@ tasks.register('jmhSetStory', Exec) {
     }
 }
 
+tasks.register('jmhRealUseTerrain', Exec) {
+    description = 'Runs only the RealUseExample terrain generation benchmark for Array, List and NativeArray.'
+    group = 'benchmark'
+    dependsOn tasks.named('jmhJar')
+
+    doFirst {
+        def jarFile = layout.buildDirectory.file("libs/${project.name}-${project.version}-jmh.jar").get().asFile
+        def jsonFile = layout.buildDirectory.file('reports/jmh/real-use-terrain-results.json').get().asFile
+        def humanFile = layout.buildDirectory.file('reports/jmh/real-use-terrain-human.txt').get().asFile
+
+        jsonFile.parentFile.mkdirs()
+
+        commandLine 'java', '-jar', jarFile.absolutePath,
+                'net.sixik.javastructg.RealUseTerrainJmhBenchmark.*',
+                '-rf', 'json',
+                '-rff', jsonFile.absolutePath,
+                '-o', humanFile.absolutePath
+    }
+}
+
 tasks.register('jmhSetStoryReport') {
     description = 'Runs the beginner-friendly set benchmark and writes a short plain-English report.'
     group = 'benchmark'
