@@ -15,20 +15,26 @@ public final class NativeObjectSet<T> extends NativeSet {
 
     private final NativeTypeMemory<T> typeMemory;
     private final boolean supportsEqualsMemory;
+    private final long keySize;
 
     private NativeByteArray states;
     private NativeIntArray hashes;
     private NativeObjectArray<T> keys;
     private final T probeBuffer;
+    private long statesAddress;
+    private long hashesAddress;
+    private long keysAddress;
 
     public NativeObjectSet(int initialCapacity, NativeTypeMemory<T> typeMemory, Supplier<T> bufferFactory) {
         super(initialCapacity);
         this.typeMemory = typeMemory;
         this.supportsEqualsMemory = typeMemory.supportsEqualsMemory();
+        this.keySize = typeMemory.sizeof();
         this.states = new NativeByteArray(capacity);
         this.hashes = new NativeIntArray(capacity);
         this.keys = new NativeObjectArray<>(capacity, typeMemory);
         this.probeBuffer = supportsEqualsMemory ? null : bufferFactory.get();
+        refreshAddresses();
     }
 
     public boolean add(T value) {
@@ -43,16 +49,20 @@ public final class NativeObjectSet<T> extends NativeSet {
         int firstDeleted = -1;
 
         while (true) {
-            byte state = states.get(index);
+            long stateAddress = statesAddress + index;
+            byte state = UNSAFE.getByte(stateAddress);
 
             if (state == EMPTY) {
                 int target = firstDeleted >= 0 ? firstDeleted : index;
                 if (firstDeleted < 0) {
                     usedSlots++;
                 }
-                states.set(target, USED);
-                hashes.set(target, mixedHash);
-                keys.set(target, value);
+                long targetStateAddress = statesAddress + target;
+                long targetHashAddress = hashesAddress + (((long) target) << 2);
+                long targetKeyAddress = keysAddress + (((long) target) * keySize);
+                UNSAFE.putByte(targetStateAddress, USED);
+                UNSAFE.putInt(targetHashAddress, mixedHash);
+                typeMemory.writeToMemory(UNSAFE, targetKeyAddress, value);
                 size++;
                 return true;
             }
@@ -61,7 +71,8 @@ public final class NativeObjectSet<T> extends NativeSet {
                 if (firstDeleted < 0) {
                     firstDeleted = index;
                 }
-            } else if (hashes.get(index) == mixedHash && slotEqualsValue(index, value)) {
+            } else if (UNSAFE.getInt(hashesAddress + (((long) index) << 2)) == mixedHash
+                    && slotEqualsValue(keysAddress + (((long) index) * keySize), value)) {
                 return false;
             }
 
@@ -78,12 +89,15 @@ public final class NativeObjectSet<T> extends NativeSet {
         int index = indexForHash(mixedHash);
 
         while (true) {
-            byte state = states.get(index);
+            long stateAddress = statesAddress + index;
+            byte state = UNSAFE.getByte(stateAddress);
 
             if (state == EMPTY) {
                 return false;
             }
-            if (state == USED && hashes.get(index) == mixedHash && slotEqualsValue(index, value)) {
+            if (state == USED
+                    && UNSAFE.getInt(hashesAddress + (((long) index) << 2)) == mixedHash
+                    && slotEqualsValue(keysAddress + (((long) index) * keySize), value)) {
                 return true;
             }
 
@@ -100,13 +114,16 @@ public final class NativeObjectSet<T> extends NativeSet {
         int index = indexForHash(mixedHash);
 
         while (true) {
-            byte state = states.get(index);
+            long stateAddress = statesAddress + index;
+            byte state = UNSAFE.getByte(stateAddress);
 
             if (state == EMPTY) {
                 return false;
             }
-            if (state == USED && hashes.get(index) == mixedHash && slotEqualsValue(index, value)) {
-                states.set(index, DELETED);
+            if (state == USED
+                    && UNSAFE.getInt(hashesAddress + (((long) index) << 2)) == mixedHash
+                    && slotEqualsValue(keysAddress + (((long) index) * keySize), value)) {
+                UNSAFE.putByte(stateAddress, DELETED);
                 size--;
                 return true;
             }
@@ -117,7 +134,7 @@ public final class NativeObjectSet<T> extends NativeSet {
 
     @Override
     public void clear() {
-        NativeRawPrimitives.fillBytes(states.ptr(), capacity, EMPTY);
+        NativeRawPrimitives.fillBytes(statesAddress, capacity, EMPTY);
         super.clear();
     }
 
@@ -155,12 +172,19 @@ public final class NativeObjectSet<T> extends NativeSet {
         states = new NativeByteArray(capacity);
         hashes = new NativeIntArray(capacity);
         keys = new NativeObjectArray<>(capacity, typeMemory);
+        refreshAddresses();
         size = 0;
         usedSlots = 0;
 
+        long oldStatesAddress = oldStates.ptr();
+        long oldHashesAddress = oldHashes.ptr();
+        long oldKeysAddress = oldKeys.ptr();
         for (int i = 0; i < oldCapacity; i++) {
-            if (oldStates.get(i) == USED) {
-                reinsertRehashedSlot(oldHashes.get(i), oldKeys.addressAt(i));
+            if (UNSAFE.getByte(oldStatesAddress + i) == USED) {
+                reinsertRehashedSlot(
+                        UNSAFE.getInt(oldHashesAddress + (((long) i) << 2)),
+                        oldKeysAddress + (((long) i) * keySize)
+                );
             }
         }
 
@@ -169,13 +193,12 @@ public final class NativeObjectSet<T> extends NativeSet {
         oldKeys.freeMemory();
     }
 
-    private boolean slotEqualsValue(int index, T value) {
-        long address = keys.addressAt(index);
+    private boolean slotEqualsValue(long address, T value) {
         if (supportsEqualsMemory) {
             return typeMemory.equalsMemory(UNSAFE, address, value);
         }
 
-        keys.get(index, probeBuffer);
+        typeMemory.readFromMemory(UNSAFE, address, probeBuffer);
         return typeMemory.equals(value, probeBuffer);
     }
 
@@ -183,10 +206,13 @@ public final class NativeObjectSet<T> extends NativeSet {
         int index = indexForHash(mixedHash);
 
         while (true) {
-            if (states.get(index) == EMPTY) {
-                states.set(index, USED);
-                hashes.set(index, mixedHash);
-                UNSAFE.copyMemory(sourceAddress, keys.addressAt(index), typeMemory.sizeof());
+            long stateAddress = statesAddress + index;
+            if (UNSAFE.getByte(stateAddress) == EMPTY) {
+                long hashAddress = hashesAddress + (((long) index) << 2);
+                long keyAddress = keysAddress + (((long) index) * keySize);
+                UNSAFE.putByte(stateAddress, USED);
+                UNSAFE.putInt(hashAddress, mixedHash);
+                UNSAFE.copyMemory(sourceAddress, keyAddress, keySize);
                 size++;
                 usedSlots++;
                 return;
@@ -202,5 +228,11 @@ public final class NativeObjectSet<T> extends NativeSet {
 
     private int indexForHash(int mixedHash) {
         return mixedHash & mask;
+    }
+
+    private void refreshAddresses() {
+        statesAddress = states.ptr();
+        hashesAddress = hashes.ptr();
+        keysAddress = keys.ptr();
     }
 }
