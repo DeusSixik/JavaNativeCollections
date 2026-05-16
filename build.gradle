@@ -39,6 +39,20 @@ tasks.register('benchmarkTest', Test) {
     }
 }
 
+tasks.register('testSetStory', Test) {
+    description = 'Runs only beginner-friendly story tests for set tradeoffs.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching 'SetStoryTest'
+    }
+
+    shouldRunAfter test
+}
+
 jmh {
     jmhVersion = '1.37'
     warmupIterations = 3
@@ -86,5 +100,104 @@ tasks.register('jmhObjectSetFocused', Exec) {
                 '-rf', 'json',
                 '-rff', jsonFile.absolutePath,
                 '-o', humanFile.absolutePath
+    }
+}
+
+tasks.register('jmhSetStory', Exec) {
+    description = 'Runs a small benchmark suite that shows where each set is better.'
+    group = 'benchmark'
+    dependsOn tasks.named('jmhJar')
+
+    doFirst {
+        def jarFile = layout.buildDirectory.file("libs/${project.name}-${project.version}-jmh.jar").get().asFile
+        def jsonFile = layout.buildDirectory.file('reports/jmh/set-story-results.json').get().asFile
+        def humanFile = layout.buildDirectory.file('reports/jmh/set-story-human.txt').get().asFile
+
+        jsonFile.parentFile.mkdirs()
+
+        commandLine 'java', '-jar', jarFile.absolutePath,
+                'net.sixik.javastructg.SetStoryJmhBenchmark.*',
+                '-rf', 'json',
+                '-rff', jsonFile.absolutePath,
+                '-o', humanFile.absolutePath
+    }
+}
+
+tasks.register('jmhSetStoryReport') {
+    description = 'Runs the beginner-friendly set benchmark and writes a short plain-English report.'
+    group = 'benchmark'
+    dependsOn tasks.named('jmhSetStory')
+
+    doLast {
+        def jsonFile = layout.buildDirectory.file('reports/jmh/set-story-results.json').get().asFile
+        def reportFile = layout.buildDirectory.file('reports/jmh/set-story-summary.txt').get().asFile
+        def results = new groovy.json.JsonSlurper().parse(jsonFile)
+
+        def scores = [:]
+        results.each { entry ->
+            scores[entry.benchmark] = entry.primaryMetric.score as BigDecimal
+        }
+
+        def score = { String benchmark ->
+            (scores[benchmark] ?: BigDecimal.ZERO).setScale(3, java.math.RoundingMode.HALF_UP)
+        }
+        def ratio = { String faster, String slower ->
+            if (!scores[slower] || scores[slower] == BigDecimal.ZERO) {
+                return 'n/a'
+            }
+            return "${(scores[faster] / scores[slower]).setScale(2, java.math.RoundingMode.HALF_UP)}x"
+        }
+        def reverseRatio = { String current, String baseline ->
+            if (!scores[current] || scores[current] == BigDecimal.ZERO) {
+                return 'n/a'
+            }
+            return "${(scores[baseline] / scores[current]).setScale(2, java.math.RoundingMode.HALF_UP)}x"
+        }
+        def passes = { String benchmark ->
+            "${score(benchmark)} full passes/s"
+        }
+
+        def lines = [
+                'Set story benchmark summary',
+                '===========================',
+                '',
+                'Configuration:',
+                '- Dataset size: 65,536 objects',
+                '- Key shape: object with String(28 chars) + 2 ints',
+                '- All numbers below are full passes per second through the whole dataset',
+                '- Higher is better',
+                '- Goal: show which set wins in the most understandable scenarios',
+                '',
+                'Story 1. Safe repeated lookup of missing keys',
+                "- Java HashSet: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.javaHashSet_safeContainsMiss')}",
+                "- NativeObjectSet: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.nativeObjectSet_safeContainsMiss')}",
+                "- NativeObjectSet prehashed: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.nativeObjectSet_safeContainsMissPrehashed')}",
+                "- Takeaway: if you can reuse the hash and still need safe equality, NativeObjectSet prehashed is ${ratio('net.sixik.javastructg.SetStoryJmhBenchmark.nativeObjectSet_safeContainsMissPrehashed', 'net.sixik.javastructg.SetStoryJmhBenchmark.javaHashSet_safeContainsMiss')} faster than Java HashSet here.",
+                '',
+                'Story 2. Safe removal of equal copies',
+                "- Java HashSet: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.javaHashSet_safeRemoveEqualCopies')}",
+                "- NativeObjectSet: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.nativeObjectSet_safeRemoveEqualCopies')}",
+                "- NativeObjectSet prehashed: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.nativeObjectSet_safeRemoveEqualCopiesPrehashed')}",
+                "- Takeaway: NativeObjectSet prehashed is ${reverseRatio('net.sixik.javastructg.SetStoryJmhBenchmark.nativeObjectSet_safeRemoveEqualCopiesPrehashed', 'net.sixik.javastructg.SetStoryJmhBenchmark.javaHashSet_safeRemoveEqualCopies')} slower than Java HashSet here, but it still keeps real object equality and off-heap storage.",
+                '',
+                'Story 3. Fast repeated hit lookup when collisions are acceptable',
+                "- Java HashSet baseline: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.javaHashSet_fastContainsHitBaseline')}",
+                "- NativeHashSet prehashed: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.nativeHashSet_fastContainsHitPrehashed')}",
+                "- Takeaway: NativeHashSet prehashed is ${ratio('net.sixik.javastructg.SetStoryJmhBenchmark.nativeHashSet_fastContainsHitPrehashed', 'net.sixik.javastructg.SetStoryJmhBenchmark.javaHashSet_fastContainsHitBaseline')} faster here, but it uses hash identity instead of full safe equality.",
+                '',
+                'Story 4. Fast bulk add of unique keys',
+                "- Java HashSet baseline: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.javaHashSet_fastAddUniqueBaseline')}",
+                "- NativeHashSet prehashed: ${passes('net.sixik.javastructg.SetStoryJmhBenchmark.nativeHashSet_fastAddUniquePrehashed')}",
+                "- Takeaway: NativeHashSet prehashed is ${ratio('net.sixik.javastructg.SetStoryJmhBenchmark.nativeHashSet_fastAddUniquePrehashed', 'net.sixik.javastructg.SetStoryJmhBenchmark.javaHashSet_fastAddUniqueBaseline')} faster for raw insertion throughput in this dataset.",
+                '',
+                'Rule of thumb:',
+                '- Use NativeObjectSet when you need safe real equality and off-heap storage.',
+                '- Use NativeObjectSet prehashed when the same keys are queried many times and hash can be reused.',
+                '- Use NativeHashSet when maximum speed matters more than collision safety.'
+        ]
+
+        reportFile.parentFile.mkdirs()
+        reportFile.text = lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Story report written to ${reportFile}"
     }
 }
