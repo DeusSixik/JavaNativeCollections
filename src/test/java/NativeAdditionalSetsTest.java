@@ -5,9 +5,9 @@ import net.sixik.javastructg.structs.sets.NativeByteSet;
 import net.sixik.javastructg.structs.sets.NativeCharSet;
 import net.sixik.javastructg.structs.sets.NativeDoubleSet;
 import net.sixik.javastructg.structs.sets.NativeFloatSet;
+import net.sixik.javastructg.structs.sets.NativeHashSet;
 import net.sixik.javastructg.structs.sets.NativeObjectSet;
 import net.sixik.javastructg.structs.sets.NativeShortSet;
-import net.sixik.javastructg.utils.NativeUtils;
 import org.junit.jupiter.api.Test;
 import sun.misc.Unsafe;
 
@@ -194,6 +194,71 @@ public class NativeAdditionalSetsTest {
         }
     }
 
+    @Test
+    public void testObjectSetUnsafeHashEqualityWorksForCollisionFreeHashes() {
+        PointMemory memory = new PointMemory();
+        NativeHashSet<Point> set = new NativeHashSet<>(8, memory);
+        try {
+            Point left = new Point("left", 1, 11);
+            Point right = new Point("right", 2, 22);
+
+            assertTrue(set.add(left));
+            assertTrue(set.add(right));
+            assertTrue(set.contains(new Point("left", 1, 11)));
+            assertTrue(set.contains(new Point("right", 2, 22)));
+            assertTrue(set.remove(new Point("left", 1, 11)));
+            assertFalse(set.contains(new Point("left", 1, 11)));
+            assertEquals(1, set.size());
+        } finally {
+            set.freeMemory();
+        }
+    }
+
+    @Test
+    public void testHashSetSupportsPrehashedOperations() {
+        PointMemory memory = new PointMemory();
+        NativeHashSet<Point> set = new NativeHashSet<>(8, memory);
+        try {
+            Point left = new Point("left", 1, 11);
+            Point right = new Point("right", 2, 22);
+
+            long leftHash = memory.hash(left);
+            long rightHash = memory.hash(right);
+
+            assertTrue(set.addHash(leftHash));
+            assertTrue(set.addHash(rightHash));
+            assertFalse(set.addHash(leftHash));
+            assertTrue(set.containsHash(leftHash));
+            assertTrue(set.removeHash(leftHash));
+            assertFalse(set.containsHash(leftHash));
+            assertEquals(1, set.size());
+        } finally {
+            set.freeMemory();
+        }
+    }
+
+    @Test
+    public void testObjectSetUnsafeHashEqualityTreatsHashCollisionAsDuplicate() {
+        CollidingPointMemory memory = new CollidingPointMemory();
+        NativeObjectSet<Point> safeSet = new NativeObjectSet<>(8, memory, Point::new);
+        NativeHashSet<Point> unsafeSet = new NativeHashSet<>(8, memory);
+        try {
+            Point left = new Point("left", 1, 11);
+            Point right = new Point("right", 2, 22);
+
+            assertTrue(safeSet.add(left));
+            assertTrue(safeSet.add(right));
+            assertEquals(2, safeSet.size());
+
+            assertTrue(unsafeSet.add(left));
+            assertFalse(unsafeSet.add(right));
+            assertEquals(1, unsafeSet.size());
+        } finally {
+            safeSet.freeMemory();
+            unsafeSet.freeMemory();
+        }
+    }
+
     private static final class Point {
         private String name;
         private int x;
@@ -254,11 +319,10 @@ public class NativeAdditionalSetsTest {
 
         @Override
         public long hash(Point element) {
-            long seed = 0;
-            seed = NativeUtils.hashCombine(seed, element.name != null ? element.name.hashCode() : 0);
-            seed = NativeUtils.hashCombine(seed, element.x);
-            seed = NativeUtils.hashCombine(seed, element.y);
-            return NativeUtils.mix(seed);
+            int result = element.name != null ? element.name.hashCode() : 0;
+            result = 31 * result + element.x;
+            result = 31 * result + element.y;
+            return result;
         }
 
         @Override
@@ -280,11 +344,10 @@ public class NativeAdditionalSetsTest {
 
         @Override
         public long hashMemory(Unsafe unsafe, long offset) {
-            long seed = 0;
-            seed = NativeUtils.hashCombine(seed, hashNameInMemory(unsafe, offset));
-            seed = NativeUtils.hashCombine(seed, unsafe.getInt(offset + X_OFFSET));
-            seed = NativeUtils.hashCombine(seed, unsafe.getInt(offset + Y_OFFSET));
-            return NativeUtils.mix(seed);
+            int result = NAME_FIELD.hashCode(unsafe, offset);
+            result = 31 * result + unsafe.getInt(offset + X_OFFSET);
+            result = 31 * result + unsafe.getInt(offset + Y_OFFSET);
+            return result;
         }
 
         @Override
@@ -295,19 +358,7 @@ public class NativeAdditionalSetsTest {
             if (unsafe.getInt(offset + Y_OFFSET) != value.y) {
                 return false;
             }
-            return java.util.Objects.equals(NAME_FIELD.read(unsafe, offset), value.name);
-        }
-
-        protected static int hashNameInMemory(Unsafe unsafe, long offset) {
-            int length = unsafe.getInt(offset + NAME_FIELD.lengthOffset());
-            long dataAddress = offset + NAME_FIELD.dataOffset();
-            int hash = 0;
-
-            for (int i = 0; i < length; i++) {
-                hash = 31 * hash + unsafe.getChar(dataAddress + (i * 2L));
-            }
-
-            return hash;
+            return NAME_FIELD.equals(unsafe, offset, value.name);
         }
     }
 
@@ -318,6 +369,18 @@ public class NativeAdditionalSetsTest {
         public void readFromMemory(Unsafe unsafe, long offset, Point outElement) {
             readCount++;
             super.readFromMemory(unsafe, offset, outElement);
+        }
+    }
+
+    private static final class CollidingPointMemory extends PointMemory {
+        @Override
+        public long hash(Point element) {
+            return 1L;
+        }
+
+        @Override
+        public long hashMemory(Unsafe unsafe, long offset) {
+            return 1L;
         }
     }
 }

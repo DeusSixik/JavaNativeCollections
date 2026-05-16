@@ -2,19 +2,17 @@ package net.sixik.javastructg.examples;
 
 import net.sixik.javastructg.structs.NativeStructLayout;
 import net.sixik.javastructg.structs.NativeTypeMemory;
-import net.sixik.javastructg.structs.sets.NativeObjectSet;
+import net.sixik.javastructg.structs.sets.NativeHashSet;
 import sun.misc.Unsafe;
 
-import java.util.Objects;
+public final class HashSetExample {
 
-public final class ObjectSetExample {
-
-    private ObjectSetExample() {
+    private HashSetExample() {
     }
 
-    public static int countUnique(Person[] people) {
+    public static int countDistinctHashes(Person[] people) {
         PersonMemory memory = new PersonMemory();
-        NativeObjectSet<Person> set = new NativeObjectSet<>(people.length * 2, memory, Person::new);
+        NativeHashSet<Person> set = new NativeHashSet<>(people.length * 2, memory);
         try {
             for (Person person : people) {
                 set.add(person);
@@ -25,30 +23,9 @@ public final class ObjectSetExample {
         }
     }
 
-    public static Person[] uniqueInEncounterOrder(Person[] people) {
+    public static boolean containsHash(Person[] people, Person needle) {
         PersonMemory memory = new PersonMemory();
-        NativeObjectSet<Person> seen = new NativeObjectSet<>(people.length * 2, memory, Person::new);
-        try {
-            Person[] out = new Person[people.length];
-            int outSize = 0;
-
-            for (Person person : people) {
-                if (seen.add(person)) {
-                    out[outSize++] = new Person(person.name, person.x, person.y);
-                }
-            }
-
-            Person[] result = new Person[outSize];
-            System.arraycopy(out, 0, result, 0, outSize);
-            return result;
-        } finally {
-            seen.freeMemory();
-        }
-    }
-
-    public static boolean contains(Person[] people, Person needle) {
-        PersonMemory memory = new PersonMemory();
-        NativeObjectSet<Person> set = new NativeObjectSet<>(people.length * 2, memory, Person::new);
+        NativeHashSet<Person> set = new NativeHashSet<>(people.length * 2, memory);
         try {
             for (Person person : people) {
                 set.add(person);
@@ -57,6 +34,14 @@ public final class ObjectSetExample {
         } finally {
             set.freeMemory();
         }
+    }
+
+    public static PrehashedPersonSet prehashed(Person[] people) {
+        PrehashedPersonSet set = new PrehashedPersonSet(people.length * 2);
+        for (Person person : people) {
+            set.add(person);
+        }
+        return set;
     }
 
     public static final class Person {
@@ -71,6 +56,52 @@ public final class ObjectSetExample {
             this.name = name;
             this.x = x;
             this.y = y;
+        }
+    }
+
+    public static final class PrehashedPersonSet implements AutoCloseable {
+        private final PersonMemory memory = new PersonMemory();
+        private final NativeHashSet<Person> set;
+
+        public PrehashedPersonSet(int expectedCapacity) {
+            this.set = new NativeHashSet<>(expectedCapacity, memory);
+        }
+
+        public long hash(Person person) {
+            return memory.hash(person);
+        }
+
+        public boolean add(Person person) {
+            return set.addHash(hash(person));
+        }
+
+        public boolean addHash(long hash) {
+            return set.addHash(hash);
+        }
+
+        public boolean contains(Person person) {
+            return set.containsHash(hash(person));
+        }
+
+        public boolean containsHash(long hash) {
+            return set.containsHash(hash);
+        }
+
+        public boolean remove(Person person) {
+            return set.removeHash(hash(person));
+        }
+
+        public boolean removeHash(long hash) {
+            return set.removeHash(hash);
+        }
+
+        public int size() {
+            return set.size();
+        }
+
+        @Override
+        public void close() {
+            set.freeMemory();
         }
     }
 
@@ -115,42 +146,6 @@ public final class ObjectSetExample {
             result = 31 * result + element.x;
             result = 31 * result + element.y;
             return result;
-        }
-
-        @Override
-        public boolean equals(Person left, Person right) {
-            return left.x == right.x
-                    && left.y == right.y
-                    && Objects.equals(left.name, right.name);
-        }
-
-        @Override
-        public boolean supportsEqualsMemory() {
-            return true;
-        }
-
-        @Override
-        public boolean supportsHashMemory() {
-            return true;
-        }
-
-        @Override
-        public long hashMemory(Unsafe unsafe, long offset) {
-            int result = NAME_FIELD.hashCode(unsafe, offset);
-            result = 31 * result + unsafe.getInt(offset + X_OFFSET);
-            result = 31 * result + unsafe.getInt(offset + Y_OFFSET);
-            return result;
-        }
-
-        @Override
-        public boolean equalsMemory(Unsafe unsafe, long offset, Person value) {
-            if (unsafe.getInt(offset + X_OFFSET) != value.x) {
-                return false;
-            }
-            if (unsafe.getInt(offset + Y_OFFSET) != value.y) {
-                return false;
-            }
-            return NAME_FIELD.equals(unsafe, offset, value.name);
         }
     }
 }

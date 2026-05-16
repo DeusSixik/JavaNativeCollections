@@ -7,11 +7,11 @@ import net.sixik.javastructg.structs.sets.NativeByteSet;
 import net.sixik.javastructg.structs.sets.NativeCharSet;
 import net.sixik.javastructg.structs.sets.NativeDoubleSet;
 import net.sixik.javastructg.structs.sets.NativeFloatSet;
+import net.sixik.javastructg.structs.sets.NativeHashSet;
 import net.sixik.javastructg.structs.sets.NativeIntSet;
 import net.sixik.javastructg.structs.sets.NativeLongSet;
 import net.sixik.javastructg.structs.sets.NativeObjectSet;
 import net.sixik.javastructg.structs.sets.NativeShortSet;
-import net.sixik.javastructg.utils.NativeUtils;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Level;
@@ -575,6 +575,32 @@ public class NativeSetJmhBenchmark {
     }
 
     @Benchmark
+    public void nativeHashSetObjectAdd(ObjectAddState state, Blackhole blackhole) {
+        NativeHashSet<BenchmarkPerson> set = new NativeHashSet<>(state.expectedCapacity, state.memory);
+        try {
+            for (BenchmarkPerson value : state.values) {
+                blackhole.consume(set.add(value));
+            }
+            blackhole.consume(set.size());
+        } finally {
+            set.freeMemory();
+        }
+    }
+
+    @Benchmark
+    public void nativeHashSetObjectAddPrehashed(ObjectAddState state, Blackhole blackhole) {
+        NativeHashSet<BenchmarkPerson> set = new NativeHashSet<>(state.expectedCapacity, state.memory);
+        try {
+            for (long hash : state.valueHashes) {
+                blackhole.consume(set.addHash(hash));
+            }
+            blackhole.consume(set.size());
+        } finally {
+            set.freeMemory();
+        }
+    }
+
+    @Benchmark
     public void hashSetObjectAdd(ObjectAddState state, Blackhole blackhole) {
         HashSet<BenchmarkPerson> set = new HashSet<>(state.expectedCapacity);
         for (BenchmarkPerson value : state.values) {
@@ -587,6 +613,20 @@ public class NativeSetJmhBenchmark {
     public void nativeObjectSetContainsHit(ObjectQueryState state, Blackhole blackhole) {
         for (BenchmarkPerson value : state.hitQueries) {
             blackhole.consume(state.nativeSet.contains(value));
+        }
+    }
+
+    @Benchmark
+    public void nativeHashSetObjectContainsHit(ObjectQueryState state, Blackhole blackhole) {
+        for (BenchmarkPerson value : state.hitQueries) {
+            blackhole.consume(state.nativeHashSet.contains(value));
+        }
+    }
+
+    @Benchmark
+    public void nativeHashSetObjectContainsHitPrehashed(ObjectQueryState state, Blackhole blackhole) {
+        for (long hash : state.hitQueryHashes) {
+            blackhole.consume(state.nativeHashSet.containsHash(hash));
         }
     }
 
@@ -605,6 +645,20 @@ public class NativeSetJmhBenchmark {
     }
 
     @Benchmark
+    public void nativeHashSetObjectContainsMiss(ObjectQueryState state, Blackhole blackhole) {
+        for (BenchmarkPerson value : state.missQueries) {
+            blackhole.consume(state.nativeHashSet.contains(value));
+        }
+    }
+
+    @Benchmark
+    public void nativeHashSetObjectContainsMissPrehashed(ObjectQueryState state, Blackhole blackhole) {
+        for (long hash : state.missQueryHashes) {
+            blackhole.consume(state.nativeHashSet.containsHash(hash));
+        }
+    }
+
+    @Benchmark
     public void hashSetObjectContainsMiss(ObjectQueryState state, Blackhole blackhole) {
         for (BenchmarkPerson value : state.missQueries) {
             blackhole.consume(state.hashSet.contains(value));
@@ -617,6 +671,22 @@ public class NativeSetJmhBenchmark {
             blackhole.consume(state.nativeSet.remove(value));
         }
         blackhole.consume(state.nativeSet.size());
+    }
+
+    @Benchmark
+    public void nativeHashSetObjectRemove(ObjectRemoveState state, Blackhole blackhole) {
+        for (BenchmarkPerson value : state.removalOrder) {
+            blackhole.consume(state.nativeHashSet.remove(value));
+        }
+        blackhole.consume(state.nativeHashSet.size());
+    }
+
+    @Benchmark
+    public void nativeHashSetObjectRemovePrehashed(ObjectRemoveState state, Blackhole blackhole) {
+        for (long hash : state.removalHashes) {
+            blackhole.consume(state.nativeHashSet.removeHash(hash));
+        }
+        blackhole.consume(state.nativeHashSet.size());
     }
 
     @Benchmark
@@ -1313,12 +1383,14 @@ public class NativeSetJmhBenchmark {
         @Param({"1024", "65536"})
         public int size;
         protected BenchmarkPerson[] values;
+        protected long[] valueHashes;
         protected int expectedCapacity;
         protected final BenchmarkPersonMemory memory = new BenchmarkPersonMemory();
 
         @Setup(Level.Trial)
         public void setupTrial() {
             values = createObjectValues(size, 800);
+            valueHashes = computeObjectHashes(values, memory);
             expectedCapacity = size << 1;
         }
     }
@@ -1331,7 +1403,10 @@ public class NativeSetJmhBenchmark {
     public static class ObjectQueryState extends ObjectStateBase {
         private BenchmarkPerson[] hitQueries;
         private BenchmarkPerson[] missQueries;
+        private long[] hitQueryHashes;
+        private long[] missQueryHashes;
         private NativeObjectSet<BenchmarkPerson> nativeSet;
+        private NativeHashSet<BenchmarkPerson> nativeHashSet;
         private HashSet<BenchmarkPerson> hashSet;
 
         @Setup(Level.Trial)
@@ -1340,14 +1415,18 @@ public class NativeSetJmhBenchmark {
             super.setupTrial();
             hitQueries = shuffledCopy(values, 801L);
             missQueries = createObjectMisses(values);
+            hitQueryHashes = computeObjectHashes(hitQueries, memory);
+            missQueryHashes = computeObjectHashes(missQueries, memory);
         }
 
         @Setup(Level.Iteration)
         public void setupIteration() {
             nativeSet = new NativeObjectSet<>(expectedCapacity, memory, BenchmarkPerson::new);
+            nativeHashSet = new NativeHashSet<>(expectedCapacity, memory);
             hashSet = new HashSet<>(expectedCapacity);
             for (BenchmarkPerson value : values) {
                 nativeSet.add(value);
+                nativeHashSet.add(value);
                 hashSet.add(value);
             }
         }
@@ -1358,6 +1437,10 @@ public class NativeSetJmhBenchmark {
                 nativeSet.freeMemory();
                 nativeSet = null;
             }
+            if (nativeHashSet != null) {
+                nativeHashSet.freeMemory();
+                nativeHashSet = null;
+            }
             hashSet = null;
         }
     }
@@ -1365,7 +1448,9 @@ public class NativeSetJmhBenchmark {
     @State(Scope.Thread)
     public static class ObjectRemoveState extends ObjectStateBase {
         private BenchmarkPerson[] removalOrder;
+        private long[] removalHashes;
         private NativeObjectSet<BenchmarkPerson> nativeSet;
+        private NativeHashSet<BenchmarkPerson> nativeHashSet;
         private HashSet<BenchmarkPerson> hashSet;
 
         @Setup(Level.Trial)
@@ -1373,14 +1458,17 @@ public class NativeSetJmhBenchmark {
         public void setupTrial() {
             super.setupTrial();
             removalOrder = shuffledCopy(values, 802L);
+            removalHashes = computeObjectHashes(removalOrder, memory);
         }
 
         @Setup(Level.Invocation)
         public void setupInvocation() {
             nativeSet = new NativeObjectSet<>(expectedCapacity, memory, BenchmarkPerson::new);
+            nativeHashSet = new NativeHashSet<>(expectedCapacity, memory);
             hashSet = new HashSet<>(expectedCapacity);
             for (BenchmarkPerson value : values) {
                 nativeSet.add(value);
+                nativeHashSet.add(value);
                 hashSet.add(value);
             }
         }
@@ -1390,6 +1478,10 @@ public class NativeSetJmhBenchmark {
             if (nativeSet != null) {
                 nativeSet.freeMemory();
                 nativeSet = null;
+            }
+            if (nativeHashSet != null) {
+                nativeHashSet.freeMemory();
+                nativeHashSet = null;
             }
             hashSet = null;
         }
@@ -1533,6 +1625,14 @@ public class NativeSetJmhBenchmark {
             misses[i] = new BenchmarkPerson(value.name + "!", value.x, value.y);
         }
         return misses;
+    }
+
+    private static long[] computeObjectHashes(BenchmarkPerson[] values, BenchmarkPersonMemory memory) {
+        long[] hashes = new long[values.length];
+        for (int i = 0; i < hashes.length; i++) {
+            hashes[i] = memory.hash(values[i]);
+        }
+        return hashes;
     }
 
     private static int[] shuffledCopy(int[] source, long seed) {
@@ -1707,11 +1807,10 @@ public class NativeSetJmhBenchmark {
 
         @Override
         public long hash(BenchmarkPerson element) {
-            long seed = 0;
-            seed = NativeUtils.hashCombine(seed, element.name != null ? element.name.hashCode() : 0);
-            seed = NativeUtils.hashCombine(seed, element.x);
-            seed = NativeUtils.hashCombine(seed, element.y);
-            return NativeUtils.mix(seed);
+            int result = element.name != null ? element.name.hashCode() : 0;
+            result = 31 * result + element.x;
+            result = 31 * result + element.y;
+            return result;
         }
 
         @Override
@@ -1732,11 +1831,10 @@ public class NativeSetJmhBenchmark {
 
         @Override
         public long hashMemory(Unsafe unsafe, long offset) {
-            long seed = 0;
-            seed = NativeUtils.hashCombine(seed, hashNameInMemory(unsafe, offset));
-            seed = NativeUtils.hashCombine(seed, unsafe.getInt(offset + X_OFFSET));
-            seed = NativeUtils.hashCombine(seed, unsafe.getInt(offset + Y_OFFSET));
-            return NativeUtils.mix(seed);
+            int result = NAME_FIELD.hashCode(unsafe, offset);
+            result = 31 * result + unsafe.getInt(offset + X_OFFSET);
+            result = 31 * result + unsafe.getInt(offset + Y_OFFSET);
+            return result;
         }
 
         @Override
@@ -1752,23 +1850,7 @@ public class NativeSetJmhBenchmark {
             if (unsafe.getInt(offset + Y_OFFSET) != value.y) {
                 return false;
             }
-            String name = NAME_FIELD.read(unsafe, offset);
-            if (name == null) {
-                return value.name == null;
-            }
-            return name.equals(value.name);
-        }
-
-        private static int hashNameInMemory(Unsafe unsafe, long offset) {
-            int length = unsafe.getInt(offset + NAME_FIELD.lengthOffset());
-            long dataAddress = offset + NAME_FIELD.dataOffset();
-            int hash = 0;
-
-            for (int i = 0; i < length; i++) {
-                hash = 31 * hash + unsafe.getChar(dataAddress + (i * 2L));
-            }
-
-            return hash;
+            return NAME_FIELD.equals(unsafe, offset, value.name);
         }
     }
 }

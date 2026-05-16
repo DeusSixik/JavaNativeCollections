@@ -139,11 +139,11 @@ public final class NativeStructLayout {
         }
 
         public void write(Unsafe unsafe, long structAddress, String value) {
-            char[] chars = value == null ? new char[0] : value.toCharArray();
-            int length = Math.min(chars.length, maxChars);
+            int length = value == null ? 0 : Math.min(value.length(), maxChars);
             putLength(unsafe, structAddress + lengthOffset, length);
-            if (length > 0) {
-                unsafe.copyMemory(chars, Unsafe.ARRAY_CHAR_BASE_OFFSET, null, structAddress + dataOffset, length * 2L);
+            long dataAddress = structAddress + dataOffset;
+            for (int i = 0; i < length; i++) {
+                unsafe.putChar(dataAddress + (i * 2L), value.charAt(i));
             }
         }
 
@@ -156,6 +156,37 @@ public final class NativeStructLayout {
             char[] chars = new char[length];
             unsafe.copyMemory(null, structAddress + dataOffset, chars, Unsafe.ARRAY_CHAR_BASE_OFFSET, length * 2L);
             return new String(chars);
+        }
+
+        public boolean equals(Unsafe unsafe, long structAddress, String value) {
+            int length = getLength(unsafe, structAddress + lengthOffset);
+            if (value == null) {
+                return false;
+            }
+            if (length != value.length()) {
+                return false;
+            }
+
+            long dataAddress = structAddress + dataOffset;
+            for (int i = 0; i < length; i++) {
+                if (unsafe.getChar(dataAddress + (i * 2L)) != value.charAt(i)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public int hashCode(Unsafe unsafe, long structAddress) {
+            int length = getLength(unsafe, structAddress + lengthOffset);
+            long dataAddress = structAddress + dataOffset;
+            int hash = 0;
+
+            for (int i = 0; i < length; i++) {
+                hash = 31 * hash + unsafe.getChar(dataAddress + (i * 2L));
+            }
+
+            return hash;
         }
 
         private void putLength(Unsafe unsafe, long address, int value) {

@@ -48,3 +48,23 @@ jmh {
     resultsFile = layout.buildDirectory.file('reports/jmh/results.json').get().asFile
     humanOutputFile = layout.buildDirectory.file('reports/jmh/human.txt').get().asFile
 }
+
+tasks.register('jmhSets', Exec) {
+    description = 'Runs JMH benchmarks for Java HashSet and native set implementations.'
+    group = 'benchmark'
+    dependsOn tasks.named('jmhJar')
+
+    doFirst {
+        def jarFile = layout.buildDirectory.file("libs/${project.name}-${project.version}-jmh.jar").get().asFile
+        def jsonFile = layout.buildDirectory.file('reports/jmh/set-results.json').get().asFile
+        def humanFile = layout.buildDirectory.file('reports/jmh/set-human.txt').get().asFile
+
+        jsonFile.parentFile.mkdirs()
+
+        commandLine 'java', '-jar', jarFile.absolutePath,
+                'net.sixik.javastructg.(NativeSetJmhBenchmark|SetComparisonJmhBenchmark|ObjectSetFocusedJmhBenchmark).*',
+                '-rf', 'json',
+                '-rff', jsonFile.absolutePath,
+                '-o', humanFile.absolutePath
+    }
+}
