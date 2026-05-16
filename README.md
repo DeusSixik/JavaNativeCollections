@@ -1,6 +1,6 @@
-# JavaStruct
+# JavaNativeCollections
 
-JavaStruct is an experimental Java library for high-performance off-heap data structures with low GC pressure.
+JavaNativeCollections is an experimental Java library for high-performance off-heap data structures with low GC pressure.
 
 This project is primarily built for the real-world performance needs of the Minecraft mod `Generator Accelerator`. That is the main design center of the library: hot loops, repeated operations, strict memory control, and practical throughput over generic convenience.
 
@@ -11,11 +11,11 @@ In short:
 - APIs are allowed to be specialized when that improves hot-path speed;
 - the project is benchmark-driven, not abstraction-driven.
 
-JavaStruct is not trying to replace all of `java.util`. It is a toolbox for performance-critical code.
+JavaNativeCollections is not trying to replace all of `java.util`. It is a toolbox for performance-critical code.
 
 ## Why this library exists
 
-JavaStruct was created to support workloads where standard heap-based collections can become a bottleneck, especially inside systems similar to `Generator Accelerator`:
+JavaNativeCollections was created to support workloads where standard heap-based collections can become a bottleneck, especially inside systems similar to `Generator Accelerator`:
 
 - large repeated scans and lookups;
 - many temporary objects in hot paths;
@@ -24,7 +24,7 @@ JavaStruct was created to support workloads where standard heap-based collection
 
 If your goal is "the most convenient collection API", the JDK is usually enough.
 
-If your goal is "squeeze more predictable performance out of a hot subsystem", JavaStruct is the type of library this project is aiming to be.
+If your goal is "squeeze more predictable performance out of a hot subsystem", JavaNativeCollections is the type of library this project is aiming to be.
 
 ## What the project currently provides
 
@@ -83,7 +83,7 @@ Main idea:
 - `NativeTypeMemory<T>` defines how to write, read, hash, and compare values;
 - `NativeObjectArray<T>` and `NativeObjectSet<T>` then use that memory model directly.
 
-This is the piece that makes JavaStruct more than just "native primitive arrays".
+This is the piece that makes JavaNativeCollections more than just "native primitive arrays".
 
 ### 3. Native sets
 
@@ -317,7 +317,7 @@ These are currently the best entry points for explaining the project to another 
 
 ## Key limitations
 
-Before using JavaStruct in production-like code, keep the tradeoffs in mind:
+Before using JavaNativeCollections in production-like code, keep the tradeoffs in mind:
 
 - memory must be released manually with `freeMemory()`;
 - this is low-level API territory, not fully managed collection code;
@@ -327,7 +327,7 @@ Before using JavaStruct in production-like code, keep the tradeoffs in mind:
 
 ## Project positioning
 
-The honest positioning of JavaStruct is:
+The honest positioning of JavaNativeCollections is:
 
 - not a general-purpose replacement for the JDK;
 - not a convenience-first collection library;
@@ -337,7 +337,7 @@ The library is designed first for maximum effectiveness in workloads like `Gener
 
 ## Project status
 
-JavaStruct is under active experimental development.
+JavaNativeCollections is under active experimental development.
 
 That means:
 

@@ -1,10 +1,31 @@
 plugins {
     id 'java'
+    id 'maven-publish'
     id 'me.champeau.jmh' version '0.7.3'
 }
 
-group = 'net.sixik.javastructg'
-version = '1.0.0'
+def jitpackGroup = gradle.startParameter.projectProperties['group'] ?: System.getenv('GROUP')
+def jitpackVersion = gradle.startParameter.projectProperties['version'] ?: System.getenv('VERSION')
+
+group = jitpackGroup ?: 'net.sixik.javastructg'
+version = jitpackVersion ?: '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.charSet = 'UTF-8'
+}
 
 repositories {
     mavenCentral()
@@ -219,5 +240,13 @@ tasks.register('jmhSetStoryReport') {
         reportFile.parentFile.mkdirs()
         reportFile.text = lines.join(System.lineSeparator()) + System.lineSeparator()
         println "Story report written to ${reportFile}"
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
     }
 }
